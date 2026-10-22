@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, KeyboardEvent, PointerEvent, ReactNode } from "react";
 import tickTockIcon from "./assets/tick-tock-icon.png";
 import tickTockWordmark from "./assets/tick-tock-wordmark.png";
 
@@ -10,19 +9,49 @@ type Section = {
   speaker?: string;
 };
 
-type Screen = "concepts" | "setup" | "ready" | "rehearse" | "review";
+type Screen =
+  | "account"
+  | "concepts"
+  | "setup"
+  | "ready"
+  | "rehearse"
+  | "review"
+  | "presentation-ready"
+  | "present"
+  | "presentation-summary";
 type PresentationMode = "individual" | "group";
+type DisplayStyle = "minimal" | "standard" | "detailed";
+type ColorMode = "muted" | "bright";
+type Account = {
+  name: string;
+  email: string;
+};
+type SavedPresentation = {
+  id: string;
+  ownerEmail: string;
+  updatedAt: number;
+  title: string;
+  presentationMode: PresentationMode;
+  sections: Section[];
+  speakers: string[];
+  displayStyle: DisplayStyle;
+  colorMode: ColorMode;
+  hapticsEnabled: boolean;
+};
 type IconName =
   | "arrow-left"
   | "check"
+  | "chevron-down"
   | "chevron-right"
   | "clock"
   | "edit"
   | "grip"
+  | "home"
   | "pause"
   | "play"
   | "plus"
-  | "sound-off"
+  | "restart"
+  | "save"
   | "trash"
   | "user"
   | "users"
@@ -33,17 +62,20 @@ const INITIAL_SECTIONS: Section[] = [
 ];
 
 function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
-  const paths: Record<IconName, ReactNode> = {
+  const paths: Record<IconName, React.ReactNode> = {
     "arrow-left": <><path d="m15 18-6-6 6-6" /><path d="M9 12h10" /></>,
     check: <path d="m5 12 4 4L19 6" />,
+    "chevron-down": <path d="m6 9 6 6 6-6" />,
     "chevron-right": <path d="m9 18 6-6-6-6" />,
     clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
     edit: <><path d="M12 20h9" /><path d="m16.5 3.5 4 4L9 19l-5 1 1-5Z" /></>,
     grip: <><circle cx="9" cy="5" r=".8" fill="currentColor" stroke="none" /><circle cx="15" cy="5" r=".8" fill="currentColor" stroke="none" /><circle cx="9" cy="12" r=".8" fill="currentColor" stroke="none" /><circle cx="15" cy="12" r=".8" fill="currentColor" stroke="none" /><circle cx="9" cy="19" r=".8" fill="currentColor" stroke="none" /><circle cx="15" cy="19" r=".8" fill="currentColor" stroke="none" /></>,
+    home: <><path d="m3 11 9-7 9 7" /><path d="M5 10v10h14V10" /><path d="M9 20v-6h6v6" /></>,
     pause: <><path d="M9 5v14" /><path d="M15 5v14" /></>,
     play: <path d="m8 5 11 7-11 7Z" />,
     plus: <><path d="M12 5v14" /><path d="M5 12h14" /></>,
-    "sound-off": <><path d="M11 5 6 9H3v6h3l5 4Z" /><path d="m16 9 5 6" /><path d="m21 9-5 6" /></>,
+    restart: <><path d="M4 8V3m0 0h5M4 3l3.5 3.5" /><path d="M5.5 9a8 8 0 1 1-1 7" /></>,
+    save: <><path d="M5 4h12l2 2v14H5Z" /><path d="M8 4v6h8V4" /><path d="M8 20v-6h8v6" /></>,
     trash: <><path d="M4 7h16" /><path d="m9 7 1-3h4l1 3" /><path d="m6 7 1 13h10l1-13" /><path d="M10 11v5M14 11v5" /></>,
     user: <><circle cx="12" cy="8" r="4" /><path d="M5 21c.5-4 3-6 7-6s6.5 2 7 6" /></>,
     users: <><circle cx="9" cy="8" r="3.5" /><path d="M3 20c.4-3.7 2.5-5.5 6-5.5s5.6 1.8 6 5.5" /><path d="M15 6.2a3.2 3.2 0 0 1 0 6.1" /><path d="M17 15c2.3.7 3.6 2.4 4 5" /></>,
@@ -92,7 +124,7 @@ function Button({
   disabled = false,
   ariaLabel,
 }: {
-  children?: ReactNode;
+  children?: React.ReactNode;
   className?: string;
   icon?: IconName;
   onClick?: () => void;
@@ -124,10 +156,32 @@ function Brand({ onClick }: { onClick: () => void }) {
   );
 }
 
-function AppHeader({ onHome }: { onHome: () => void }) {
+function AppHeader({
+  account,
+  onAccount,
+  onHome,
+}: {
+  account: Account | null;
+  onAccount: () => void;
+  onHome: () => void;
+}) {
   return (
     <header className="app-header">
       <Brand onClick={onHome} />
+      <div className="header-actions">
+        <Button className="home-button" icon="home" onClick={onHome} variant="ghost">
+          Home
+        </Button>
+        <Button
+          ariaLabel={account ? `Account for ${account.name}` : "Sign in"}
+          className={`account-button ${account ? "account-button--signed-in" : ""}`}
+          icon="user"
+          onClick={onAccount}
+          variant="ghost"
+        >
+          {account ? account.name.split(" ")[0] : "Sign in"}
+        </Button>
+      </div>
     </header>
   );
 }
@@ -149,6 +203,16 @@ const MODES: {
   },
 ];
 
+const DISPLAY_STYLES: {
+  id: DisplayStyle;
+  name: string;
+  description: string;
+}[] = [
+  { id: "minimal", name: "Focused", description: "Speaker and section" },
+  { id: "standard", name: "Balanced", description: "Essential timing" },
+  { id: "detailed", name: "Full timing", description: "Complete pacing" },
+];
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>("concepts");
   const [presentationMode, setPresentationMode] = useState<PresentationMode>("individual");
@@ -156,8 +220,6 @@ export default function App() {
   const [sections, setSections] = useState<Section[]>(INITIAL_SECTIONS);
   const [speakers, setSpeakers] = useState(["Maya", "Jordan", "Alex"]);
   const [newSpeaker, setNewSpeaker] = useState("");
-  const [sharedSession, setSharedSession] = useState(false);
-  const [inviteCopied, setInviteCopied] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draftName, setDraftName] = useState("");
   const [draftTime, setDraftTime] = useState("");
@@ -167,12 +229,46 @@ export default function App() {
   const [sectionElapsed, setSectionElapsed] = useState(0);
   const [totalElapsed, setTotalElapsed] = useState(0);
   const [actualTimes, setActualTimes] = useState<number[]>([]);
-  const [isIncomplete, setIsIncomplete] = useState(false);
+  const [rehearsalIncomplete, setRehearsalIncomplete] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [draggingId, setDraggingId] = useState<number | null>(null);
   const [dragAnnouncement, setDragAnnouncement] = useState("");
+  const [displayStyle, setDisplayStyle] = useState<DisplayStyle>("standard");
+  const [colorMode, setColorMode] = useState<ColorMode>("muted");
+  const [showPresentationCustomization, setShowPresentationCustomization] = useState(false);
+  const [hapticsEnabled, setHapticsEnabled] = useState(false);
+  const [exactTimeVisible, setExactTimeVisible] = useState(false);
+  const [showLiveBreakdown, setShowLiveBreakdown] = useState(false);
+  const [liveRunSaved, setLiveRunSaved] = useState(false);
+  const [confirmingRehearsalSetup, setConfirmingRehearsalSetup] = useState(false);
+  const [resumeRehearsalAfterConfirm, setResumeRehearsalAfterConfirm] = useState(false);
+  const [account, setAccount] = useState<Account | null>(() => {
+    try {
+      const saved = window.localStorage.getItem("tick-tock-account");
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [savedPresentations, setSavedPresentations] = useState<SavedPresentation[]>(() => {
+    try {
+      const saved = window.localStorage.getItem("tick-tock-presentations");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [activeSavedId, setActiveSavedId] = useState<string | null>(null);
+  const [accountName, setAccountName] = useState("");
+  const [accountEmail, setAccountEmail] = useState("");
+  const [accountError, setAccountError] = useState("");
+  const [accountReturnScreen, setAccountReturnScreen] = useState<Screen>("concepts");
+  const [saveAfterSignIn, setSaveAfterSignIn] = useState(false);
+  const [saveConfirmation, setSaveConfirmation] = useState("");
   const nextId = useRef(2);
-  // Millisecond clock independent of the number of timer callbacks executed.
+  const exactTimeTimeout = useRef<number | null>(null);
+  const lastHapticSection = useRef<number | null>(null);
+  // One monotonic clock for both Rehearse and Present, including pause/resume.
   const clock = useRef({ totalMs: 0, sectionMs: 0, since: null as number | null });
 
   const totalTarget = useMemo(
@@ -180,7 +276,8 @@ export default function App() {
     [sections],
   );
 
-  // Use actual elapsed time: background tabs and throttled timers cannot create drift.
+  // Timer callbacks are only for display updates. Elapsed time comes from
+  // performance.now(), so background-tab throttling does not slow the clock.
   const snapshot = () => {
     const now = performance.now();
     const extra = clock.current.since === null ? 0 : now - clock.current.since;
@@ -198,17 +295,54 @@ export default function App() {
     return { totalMs, sectionMs };
   };
 
+  const toggleTimer = () => {
+    if (isRunning) {
+      freezeClock();
+      setIsRunning(false);
+    } else {
+      clock.current.since = performance.now();
+      setIsRunning(true);
+    }
+  };
+
   useEffect(() => {
-    if (!isRunning || screen !== "rehearse") return;
+    if (!isRunning || (screen !== "rehearse" && screen !== "present")) return;
     const update = () => {
-      const elapsed = clock.current.since === null ? 0 : performance.now() - clock.current.since;
-      setSectionElapsed((clock.current.sectionMs + elapsed) / 1000);
-      setTotalElapsed((clock.current.totalMs + elapsed) / 1000);
+      const now = performance.now();
+      const extra = clock.current.since === null ? 0 : now - clock.current.since;
+      setSectionElapsed((clock.current.sectionMs + extra) / 1000);
+      setTotalElapsed((clock.current.totalMs + extra) / 1000);
     };
     update();
     const timer = window.setInterval(update, 200);
     return () => window.clearInterval(timer);
   }, [isRunning, screen]);
+
+  useEffect(() => {
+    return () => {
+      if (exactTimeTimeout.current) window.clearTimeout(exactTimeTimeout.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem("tick-tock-presentations", JSON.stringify(savedPresentations));
+  }, [savedPresentations]);
+
+  useEffect(() => {
+    if (
+      screen !== "present" ||
+      !hapticsEnabled ||
+      !isRunning ||
+      !sections[activeIndex] ||
+      sections[activeIndex].target - sectionElapsed > 5 ||
+      sections[activeIndex].target - sectionElapsed <= 0 ||
+      lastHapticSection.current === activeIndex
+    ) {
+      return;
+    }
+    lastHapticSection.current = activeIndex;
+    navigator.vibrate?.([70, 50, 70]);
+  }, [activeIndex, hapticsEnabled, isRunning, screen, sectionElapsed, sections]);
 
   const moveSection = (sectionId: number, targetIndex: number) => {
     setSections((current) => {
@@ -224,7 +358,7 @@ export default function App() {
     });
   };
 
-  const handleDragMove = (event: PointerEvent<HTMLButtonElement>) => {
+  const handleDragMove = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (draggingId === null) return;
     const target = document
       .elementFromPoint(event.clientX, event.clientY)
@@ -236,7 +370,7 @@ export default function App() {
   };
 
   const handleDragKeyDown = (
-    event: KeyboardEvent<HTMLButtonElement>,
+    event: React.KeyboardEvent<HTMLButtonElement>,
     section: Section,
   ) => {
     if (event.key === " " || event.key === "Enter") {
@@ -320,31 +454,44 @@ export default function App() {
     setSectionElapsed(0);
     setTotalElapsed(0);
     setActualTimes([]);
-    setIsIncomplete(false);
+    setRehearsalIncomplete(false);
+    lastHapticSection.current = null;
+    setConfirmingRehearsalSetup(false);
     setIsRunning(true);
     setScreen("rehearse");
-    window.scrollTo(0, 0);
   };
 
-  const pauseOrResume = () => {
-    if (isRunning) {
-      freezeClock();
-      setIsRunning(false);
-    } else {
-      clock.current.since = performance.now();
-      setIsRunning(true);
-    }
+  const startPresentation = () => {
+    clock.current = { totalMs: 0, sectionMs: 0, since: performance.now() };
+    setActiveIndex(0);
+    setSectionElapsed(0);
+    setTotalElapsed(0);
+    setActualTimes([]);
+    lastHapticSection.current = null;
+    setExactTimeVisible(false);
+    setShowLiveBreakdown(false);
+    setLiveRunSaved(false);
+    setIsRunning(true);
+    setScreen("present");
   };
 
-  const finishRehearsal = (incomplete = true) => {
+  const revealExactTime = () => {
+    setExactTimeVisible(true);
+    if (exactTimeTimeout.current) window.clearTimeout(exactTimeTimeout.current);
+    exactTimeTimeout.current = window.setTimeout(() => setExactTimeVisible(false), 3000);
+  };
+
+  const finishRehearsal = (includeCurrent = true) => {
     const { sectionMs } = freezeClock();
     setIsRunning(false);
-    setActualTimes((current) => {
-      const next = [...current];
-      next[activeIndex] = sectionMs / 1000;
-      return next;
-    });
-    setIsIncomplete(incomplete);
+    setRehearsalIncomplete(true);
+    if (includeCurrent) {
+      setActualTimes((current) => {
+        const next = [...current];
+        next[activeIndex] = sectionMs / 1000;
+        return next;
+      });
+    }
     setScreen("review");
     window.scrollTo(0, 0);
   };
@@ -358,8 +505,8 @@ export default function App() {
       clock.current = { totalMs, sectionMs, since: null };
       setTotalElapsed(totalMs / 1000);
       setSectionElapsed(sectionMs / 1000);
-      setIsIncomplete(false);
       setIsRunning(false);
+      setRehearsalIncomplete(false);
       setScreen("review");
       window.scrollTo(0, 0);
       return;
@@ -370,9 +517,47 @@ export default function App() {
     setSectionElapsed(0);
   };
 
+  const nextPresentationSection = () => {
+    const { sectionMs, totalMs } = snapshot();
+    const nextActual = [...actualTimes];
+    nextActual[activeIndex] = sectionMs / 1000;
+    setActualTimes(nextActual);
+    setExactTimeVisible(false);
+    if (hapticsEnabled) navigator.vibrate?.(35);
+    if (activeIndex === sections.length - 1) {
+      clock.current = { totalMs, sectionMs, since: null };
+      setTotalElapsed(totalMs / 1000);
+      setSectionElapsed(sectionMs / 1000);
+      setIsRunning(false);
+      setScreen("presentation-summary");
+      window.scrollTo(0, 0);
+      return;
+    }
+    clock.current = { totalMs, sectionMs: 0, since: isRunning ? performance.now() : null };
+    setTotalElapsed(totalMs / 1000);
+    setActiveIndex((value) => value + 1);
+    setSectionElapsed(0);
+  };
+
+  const restartCurrentSection = () => {
+    const { totalMs, sectionMs } = snapshot();
+    const updatedTotalMs = Math.max(0, totalMs - sectionMs);
+    clock.current = { totalMs: updatedTotalMs, sectionMs: 0, since: isRunning ? performance.now() : null };
+    setTotalElapsed(updatedTotalMs / 1000);
+    setSectionElapsed(0);
+    setActualTimes((current) => {
+      const next = [...current];
+      next[activeIndex] = 0;
+      return next;
+    });
+    setExactTimeVisible(false);
+    lastHapticSection.current = null;
+  };
+
   const resetToSetup = () => {
     clock.current.since = null;
     setIsRunning(false);
+    setConfirmingRehearsalSetup(false);
     setScreen("setup");
     setEditingId(null);
     window.scrollTo(0, 0);
@@ -386,6 +571,110 @@ export default function App() {
     window.scrollTo(0, 0);
   };
 
+  const openAccount = (returnScreen: Screen = screen) => {
+    setAccountError("");
+    setAccountReturnScreen(returnScreen);
+    setScreen("account");
+    window.scrollTo(0, 0);
+  };
+
+  const buildSavedPresentation = (
+    id: string,
+    ownerEmail: string,
+  ): SavedPresentation => ({
+    id,
+    ownerEmail,
+    updatedAt: Date.now(),
+    title: title.trim(),
+    presentationMode,
+    sections,
+    speakers,
+    displayStyle,
+    colorMode,
+    hapticsEnabled,
+  });
+
+  const savePresentation = (signedInAccount = account) => {
+    if (!signedInAccount) {
+      setSaveAfterSignIn(true);
+      openAccount(screen);
+      return;
+    }
+    if (!title.trim()) {
+      setFormError("Add a presentation title before saving.");
+      return;
+    }
+    const id = activeSavedId ?? crypto.randomUUID();
+    const saved = buildSavedPresentation(id, signedInAccount.email);
+    setSavedPresentations((current) => [
+      saved,
+      ...current.filter((presentation) => presentation.id !== id),
+    ]);
+    setActiveSavedId(id);
+    setSaveConfirmation(activeSavedId ? "Changes saved" : "Presentation saved");
+    window.setTimeout(() => setSaveConfirmation(""), 2400);
+  };
+
+  const signIn = () => {
+    const name = accountName.trim();
+    const email = accountEmail.trim().toLowerCase();
+    if (!name || !/^\S+@\S+\.\S+$/.test(email)) {
+      setAccountError("Enter your name and a valid email address.");
+      return;
+    }
+    const nextAccount = { name, email };
+    setAccount(nextAccount);
+    window.localStorage.setItem("tick-tock-account", JSON.stringify(nextAccount));
+    setAccountError("");
+    if (saveAfterSignIn) {
+      setSaveAfterSignIn(false);
+      savePresentation(nextAccount);
+      setScreen(accountReturnScreen);
+    } else {
+      setScreen(accountReturnScreen);
+    }
+  };
+
+  const signOut = () => {
+    setAccount(null);
+    setActiveSavedId(null);
+    window.localStorage.removeItem("tick-tock-account");
+    setScreen("concepts");
+  };
+
+  const startNewPresentation = (mode: PresentationMode) => {
+    setPresentationMode(mode);
+    setTitle("");
+    setSections([{ id: 1, name: "Intro", target: 60, speaker: mode === "group" ? "Speaker 1" : undefined }]);
+    setSpeakers(mode === "group" ? ["Speaker 1"] : []);
+    setDisplayStyle("standard");
+    setColorMode("muted");
+    setHapticsEnabled(false);
+    setActiveSavedId(null);
+    setFormError("");
+    nextId.current = 2;
+    setScreen("setup");
+    window.scrollTo(0, 0);
+  };
+
+  const openSavedPresentation = (presentation: SavedPresentation) => {
+    setTitle(presentation.title);
+    setPresentationMode(presentation.presentationMode);
+    setSections(presentation.sections);
+    setSpeakers(presentation.speakers);
+    setDisplayStyle(presentation.displayStyle);
+    setColorMode(presentation.colorMode);
+    setHapticsEnabled(presentation.hapticsEnabled);
+    setActiveSavedId(presentation.id);
+    nextId.current = Math.max(0, ...presentation.sections.map((section) => section.id)) + 1;
+    setScreen("setup");
+    window.scrollTo(0, 0);
+  };
+
+  const userPresentations = account
+    ? savedPresentations.filter((presentation) => presentation.ownerEmail === account.email)
+    : [];
+
   const addSpeaker = () => {
     const name = newSpeaker.trim();
     if (!name || speakers.some((speaker) => speaker.toLowerCase() === name.toLowerCase())) return;
@@ -393,27 +682,157 @@ export default function App() {
     setNewSpeaker("");
   };
 
+  if (screen === "account") {
+    return (
+      <main className="app-shell account-screen">
+        <header className="app-header">
+          <Brand onClick={goHome} />
+          <Button
+            className="home-button"
+            icon="arrow-left"
+            onClick={() => setScreen(accountReturnScreen)}
+            variant="ghost"
+          >
+            Back
+          </Button>
+        </header>
+        <section className="page-content account-content">
+          {account ? (
+            <>
+              <span className="account-avatar"><Icon name="user" size={30} /></span>
+              <span className="eyebrow">Your account</span>
+              <h1>{account.name}</h1>
+              <p className="lede account-email">{account.email}</p>
+              <div className="account-stats">
+                <strong>{userPresentations.length}</strong>
+                <span>{userPresentations.length === 1 ? "saved presentation" : "saved presentations"}</span>
+              </div>
+              <Button className="button--full" icon="home" onClick={goHome}>
+                View my presentations
+              </Button>
+              <Button className="button--full" onClick={signOut} variant="secondary">
+                Sign out
+              </Button>
+              <p className="account-device-note">This prototype saves account data on this device.</p>
+            </>
+          ) : (
+            <>
+              <span className="eyebrow">Tick-Tock account</span>
+              <h1>Save every presentation.</h1>
+              <p className="lede">
+                Sign in to keep multiple presentations and return to every section, speaker, and display setting.
+              </p>
+              <div className="account-benefits">
+                <div><Icon name="save" /><span><strong>Keep your setup</strong><small>Sections, speakers, timing, and display preferences</small></span></div>
+                <div><Icon name="clock" /><span><strong>Pick up anytime</strong><small>Your presentation library stays ready on this device</small></span></div>
+              </div>
+              <div className="account-form">
+                <label className="field">
+                  <span className="field__label">Name</span>
+                  <input
+                    autoComplete="name"
+                    onChange={(event) => setAccountName(event.target.value)}
+                    placeholder="Your name"
+                    value={accountName}
+                  />
+                </label>
+                <label className="field">
+                  <span className="field__label">Email</span>
+                  <input
+                    autoComplete="email"
+                    inputMode="email"
+                    onChange={(event) => setAccountEmail(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") signIn();
+                    }}
+                    placeholder="you@example.com"
+                    value={accountEmail}
+                  />
+                </label>
+                {accountError && <div className="form-error"><Icon name="warning" size={18} />{accountError}</div>}
+                <Button className="button--full" onClick={signIn}>Continue with email</Button>
+              </div>
+              <button
+                className="guest-link"
+                onClick={() => {
+                  setSaveAfterSignIn(false);
+                  setScreen(accountReturnScreen);
+                }}
+                type="button"
+              >
+                Continue as guest
+              </button>
+              <p className="account-device-note">No account is required to rehearse or present.</p>
+            </>
+          )}
+        </section>
+      </main>
+    );
+  }
+
   if (screen === "concepts") {
     return (
       <main className="concept-gallery">
         <header className="gallery-header">
           <Brand onClick={goHome} />
+          <Button
+            className={`account-button ${account ? "account-button--signed-in" : ""}`}
+            icon="user"
+            onClick={() => openAccount("concepts")}
+            variant="ghost"
+          >
+            {account ? account.name.split(" ")[0] : "Sign in"}
+          </Button>
         </header>
         <section className="gallery-content">
           <div className="gallery-intro">
-            <h1>How are you rehearsing?</h1>
-            <p>Choose a setup to begin.</p>
+            <span className="eyebrow">{account ? `Welcome back, ${account.name.split(" ")[0]}` : "Guest mode"}</span>
+            <h1>{account ? "Your presentations" : "Start a presentation"}</h1>
+            <p>{account ? "Open a saved presentation or begin something new." : "Rehearse and present without an account. Sign in only when you want to save."}</p>
+          </div>
+          {account && userPresentations.length > 0 && (
+            <div className="presentation-library">
+              {userPresentations.map((presentation) => (
+                <article className="saved-presentation" key={presentation.id}>
+                  <button onClick={() => openSavedPresentation(presentation)} type="button">
+                    <span className={`saved-presentation__icon saved-presentation__icon--${presentation.presentationMode}`}>
+                      <Icon name={presentation.presentationMode === "group" ? "users" : "user"} />
+                    </span>
+                    <span className="saved-presentation__copy">
+                      <strong>{presentation.title}</strong>
+                      <small>
+                        {presentation.sections.length} {presentation.sections.length === 1 ? "section" : "sections"} · {formatTime(presentation.sections.reduce((total, section) => total + section.target, 0))}
+                      </small>
+                      <time>Updated {new Date(presentation.updatedAt).toLocaleDateString()}</time>
+                    </span>
+                    <Icon name="chevron-right" />
+                  </button>
+                  <Button
+                    ariaLabel={`Delete ${presentation.title}`}
+                    icon="trash"
+                    onClick={() => setSavedPresentations((current) => current.filter((item) => item.id !== presentation.id))}
+                    variant="ghost"
+                  />
+                </article>
+              ))}
+            </div>
+          )}
+          {!account && (
+            <button className="save-callout" onClick={() => openAccount("concepts")} type="button">
+              <span className="save-callout__icon"><Icon name="save" /></span>
+              <span><strong>Want to save your work?</strong><small>Sign in to keep one or many presentations.</small></span>
+              <Icon name="chevron-right" />
+            </button>
+          )}
+          <div className="new-presentation-heading">
+            <h2>{account && userPresentations.length ? "New presentation" : "Choose a setup"}</h2>
           </div>
           <div className="concept-grid">
             {MODES.map((mode) => (
               <button
                 className={`concept-card concept-card--${mode.id}`}
                 key={mode.id}
-                onClick={() => {
-                  setPresentationMode(mode.id);
-                  setScreen("setup");
-                  window.scrollTo(0, 0);
-                }}
+                onClick={() => startNewPresentation(mode.id)}
                 type="button"
               >
                 <span className="mode-icon">
@@ -435,7 +854,7 @@ export default function App() {
   if (screen === "setup") {
     return (
       <main className={`app-shell mode--${presentationMode}`}>
-        <AppHeader onHome={goHome} />
+        <AppHeader account={account} onAccount={() => openAccount("setup")} onHome={goHome} />
         <div className="direction-strip">
           <button onClick={() => setScreen("concepts")} type="button">
             <Icon name="arrow-left" size={17} /> Change mode
@@ -443,7 +862,16 @@ export default function App() {
           <span>{presentationMode} presentation</span>
         </div>
         <section className="page-content">
-          <h1>{presentationMode === "group" ? "Group setup" : "Presentation setup"}</h1>
+          <div className="setup-heading">
+            <div>
+              <span className="eyebrow">{account ? (activeSavedId ? "Saved presentation" : "New presentation") : "Guest presentation"}</span>
+              <h1>{presentationMode === "group" ? "Group setup" : "Presentation setup"}</h1>
+            </div>
+            <Button icon="save" onClick={() => savePresentation()} variant="secondary">
+              Save
+            </Button>
+          </div>
+          {saveConfirmation && <div aria-live="polite" className="save-confirmation"><Icon name="check" size={17} />{saveConfirmation}</div>}
 
           <label className="field">
             <span className="field__label">Presentation title</span>
@@ -475,7 +903,14 @@ export default function App() {
                   placeholder="Add speaker name"
                   value={newSpeaker}
                 />
-                <Button icon="plus" onClick={addSpeaker} variant="secondary">Add</Button>
+                <Button
+                  disabled={!newSpeaker.trim()}
+                  icon="plus"
+                  onClick={addSpeaker}
+                  variant="secondary"
+                >
+                  Add
+                </Button>
               </div>
             </div>
           )}
@@ -583,9 +1018,12 @@ export default function App() {
                 {presentationMode === "group" && (
                   <label className="field field--speaker">
                     <span className="field__label">Speaker</span>
-                    <select onChange={(event) => setDraftSpeaker(event.target.value)} value={draftSpeaker}>
-                      {speakers.map((speaker) => <option key={speaker}>{speaker}</option>)}
-                    </select>
+                    <span className="speaker-select">
+                      <select onChange={(event) => setDraftSpeaker(event.target.value)} value={draftSpeaker}>
+                        {speakers.map((speaker) => <option key={speaker}>{speaker}</option>)}
+                      </select>
+                      <Icon name="chevron-down" size={22} />
+                    </span>
                   </label>
                 )}
               </div>
@@ -620,7 +1058,7 @@ export default function App() {
   if (screen === "ready") {
     return (
       <main className={`app-shell ready-screen mode--${presentationMode}`}>
-        <AppHeader onHome={goHome} />
+        <AppHeader account={account} onAccount={() => openAccount("ready")} onHome={goHome} />
         <section className="page-content">
           <button className="back-link" onClick={() => setScreen("setup")} type="button">
             <Icon name="arrow-left" /> Edit setup
@@ -639,43 +1077,17 @@ export default function App() {
               <strong>{presentationMode === "group" ? speakers.length : sections.length}</strong>
             </div>
           </div>
-          {presentationMode === "group" && (
-            <div className="shared-session">
-              <div className="shared-session__icon"><Icon name="sound-off" /></div>
-              <div>
-                <strong>{sharedSession ? "Team room is ready" : "Rehearse together"}</strong>
-                <span>
-                  {sharedSession
-                    ? "Room BLUE-42 · 1 of 3 joined"
-                    : "Sync teammates to this rehearsal."}
-                </span>
-              </div>
-              <Button
-                onClick={() => {
-                  if (sharedSession) {
-                    void navigator.clipboard?.writeText("Join our Tick-Tock rehearsal: BLUE-42");
-                    setInviteCopied(true);
-                  } else {
-                    setSharedSession(true);
-                  }
-                }}
-                variant={sharedSession ? "primary" : "secondary"}
-              >
-                {sharedSession ? (inviteCopied ? "Invite copied" : "Copy invite") : "Create room"}
-              </Button>
-            </div>
-          )}
           <div className="timeline">
             {sections.map((section, index) => (
               <div className="timeline-block" key={section.id}>
-                <div className="timeline-row">
+                <li>
                   <span className="timeline__number">{index + 1}</span>
                   <span className="timeline__content">
                     <strong>{section.name}</strong>
                     {presentationMode === "group" && <small>{section.speaker}</small>}
                   </span>
                   <time>{formatTime(section.target)}</time>
-                </div>
+                </li>
                 {presentationMode === "group" &&
                   index < sections.length - 1 &&
                   section.speaker !== sections[index + 1].speaker && (
@@ -687,10 +1099,363 @@ export default function App() {
               </div>
             ))}
           </div>
+          <div className="launch-options">
+            <h2>Choose how to begin</h2>
+            <button className="launch-option launch-option--rehearse" onClick={startRehearsal} type="button">
+              <span className="launch-option__icon"><Icon name="play" size={22} /></span>
+              <span>
+                <strong>Rehearse</strong>
+                <small>Practice and review your pacing</small>
+              </span>
+              <Icon name="chevron-right" />
+            </button>
+            <button
+              className="launch-option launch-option--present"
+              onClick={() => {
+                setScreen("presentation-ready");
+                window.scrollTo(0, 0);
+              }}
+              type="button"
+            >
+              <span className="launch-option__icon"><Icon name="clock" size={22} /></span>
+              <span>
+                <strong>Present</strong>
+                <small>Calm, glanceable timer for the real thing</small>
+              </span>
+              <Icon name="chevron-right" />
+            </button>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  if (screen === "presentation-ready") {
+    const selectedDisplayStyle = DISPLAY_STYLES.find((style) => style.id === displayStyle)!;
+    return (
+      <main className={`app-shell presentation-ready-screen mode--${presentationMode}`}>
+        <AppHeader account={account} onAccount={() => openAccount("presentation-ready")} onHome={goHome} />
+        <section className="page-content">
+          <button className="back-link" onClick={() => setScreen("ready")} type="button">
+            <Icon name="arrow-left" /> Back
+          </button>
+          <div className="presentation-ready__intro">
+            <span className="eyebrow">Presentation mode</span>
+            <h1>Ready to present?</h1>
+            <p>{title}</p>
+          </div>
+
+          <div className="presentation-ready__total">
+            <span>Total time</span>
+            <strong>{formatTime(totalTarget)}</strong>
+            <small>{sections.length} {sections.length === 1 ? "section" : "sections"}</small>
+          </div>
+
+          <div className="presentation-ready__sections">
+            {sections.map((section, index) => (
+              <div key={section.id}>
+                <span>{index + 1}</span>
+                <div>
+                  <strong>{section.name}</strong>
+                  {presentationMode === "group" && <small>{section.speaker}</small>}
+                </div>
+                <time>{formatTime(section.target)}</time>
+              </div>
+            ))}
+          </div>
+
+          <button
+            aria-expanded={showPresentationCustomization}
+            className="presentation-customize-toggle"
+            onClick={() => setShowPresentationCustomization((value) => !value)}
+            type="button"
+          >
+            <span>
+              <strong>Customize presentation display</strong>
+              <small>{selectedDisplayStyle.name} · {colorMode} colors</small>
+            </span>
+            <Icon name="chevron-down" size={20} />
+          </button>
+
+          {showPresentationCustomization && (
+            <div className="presentation-customization">
+              <fieldset className="presentation-setting">
+                <legend>Display detail</legend>
+                <div className="segmented-control display-style-control">
+                  {DISPLAY_STYLES.map((style) => (
+                    <button
+                      aria-pressed={displayStyle === style.id}
+                      key={style.id}
+                      onClick={() => setDisplayStyle(style.id)}
+                      type="button"
+                    >
+                      <strong>{style.name}</strong>
+                      <small>{style.description}</small>
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+
+              <fieldset className="presentation-setting">
+                <legend>Timer colors</legend>
+                <div className="segmented-control segmented-control--two">
+                  {(["muted", "bright"] as ColorMode[]).map((mode) => (
+                    <button
+                      aria-pressed={colorMode === mode}
+                      key={mode}
+                      onClick={() => setColorMode(mode)}
+                      type="button"
+                    >
+                      {mode}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+
+              <div className={`presentation-preview presentation-preview--${colorMode}`}>
+                <div className="presentation-preview__top">
+                  {displayStyle !== "minimal" && (
+                    <span>Section 1 of {sections.length}</span>
+                  )}
+                  {displayStyle === "detailed" && (
+                    <span>Total 0:05 / {formatTime(totalTarget)}</span>
+                  )}
+                </div>
+                <div className="presentation-preview__stage">
+                  {presentationMode === "group" && (
+                    <small>{sections[0]?.speaker}</small>
+                  )}
+                  <strong>{sections[0]?.name}</strong>
+                  <div className="presentation-preview__progress">
+                    <span />
+                  </div>
+                  {displayStyle !== "minimal" && (
+                    <time>0:05 / {formatTime(sections[0]?.target ?? 0)}</time>
+                  )}
+                  {displayStyle === "detailed" && (
+                    <b className="presentation-preview__status">On pace</b>
+                  )}
+                  <p>
+                    {sections.length > 1
+                      ? `Next: ${sections[1].name}${displayStyle === "detailed" ? ` · ${formatTime(sections[1].target)}` : ""}`
+                      : "Final section"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="presentation-setting haptic-setting">
+                <div>
+                  <strong>Pacing cues</strong>
+                  <small>Pulse in the final 5 seconds and vibrate when supported</small>
+                </div>
+                <button
+                  aria-label="Toggle pacing cues"
+                  aria-pressed={hapticsEnabled}
+                  className="switch"
+                  onClick={() => setHapticsEnabled((value) => !value)}
+                  type="button"
+                >
+                  <span />
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="presentation-save-panel">
+            <span>
+              <strong>{account ? (activeSavedId ? "Keep this presentation up to date" : "Save this presentation") : "Want to use this again?"}</strong>
+              <small>{account ? "Save your timing and display choices." : "Sign in to save all settings and inputs."}</small>
+            </span>
+            <Button icon="save" onClick={() => savePresentation()} variant="secondary">
+              {activeSavedId ? "Update" : "Save"}
+            </Button>
+          </div>
+          {saveConfirmation && <div aria-live="polite" className="save-confirmation"><Icon name="check" size={17} />{saveConfirmation}</div>}
+
         </section>
         <div className="sticky-action sticky-action--light">
-          <Button className="button--full button--tall" icon="play" onClick={startRehearsal}>
-            Start rehearsal
+          <Button className="button--full button--tall" icon="play" onClick={startPresentation}>
+            Start
+          </Button>
+        </div>
+      </main>
+    );
+  }
+
+  if (screen === "present") {
+    const current = sections[activeIndex];
+    const isLast = activeIndex === sections.length - 1;
+    const isOver = sectionElapsed > current.target;
+    const progress = Math.min(100, (sectionElapsed / current.target) * 100);
+    const pace = isOver ? "over" : progress >= 80 ? "near" : "neutral";
+    const cueActive =
+      hapticsEnabled &&
+      isRunning &&
+      sectionElapsed < current.target &&
+      current.target - sectionElapsed <= 5;
+    return (
+      <main
+        className={`present-screen present-screen--${pace} present-screen--${displayStyle} timer-color--${colorMode} ${cueActive ? "present-screen--cue" : ""}`}
+        onClick={revealExactTime}
+      >
+        <div className="present-screen__top">
+          <Button className="present-home-button" icon="home" onClick={goHome} variant="ghost">
+            Home
+          </Button>
+          <div className="present-screen__meta">
+            {displayStyle !== "minimal" && (
+              <span>Section {activeIndex + 1} of {sections.length}</span>
+            )}
+            {displayStyle === "detailed" && (
+              <span>Total {formatTime(totalElapsed)} / {formatTime(totalTarget)}</span>
+            )}
+          </div>
+        </div>
+
+        <div className="present-actions" onClick={(event) => event.stopPropagation()}>
+          <Button ariaLabel="Go back to setup" icon="edit" onClick={resetToSetup} variant="ghost">
+            Setup
+          </Button>
+          <Button ariaLabel="Restart current section" icon="restart" onClick={restartCurrentSection} variant="ghost">
+            Restart
+          </Button>
+          <Button
+            icon={isRunning ? "pause" : "play"}
+            onClick={toggleTimer}
+            variant="ghost"
+          >
+            {isRunning ? "Pause" : "Resume"}
+          </Button>
+        </div>
+
+        <section className="present-stage" key={current.id}>
+          {presentationMode === "group" && (
+            <span className="present-speaker">
+              <small>Presenting</small>
+              <strong>{current.speaker}</strong>
+            </span>
+          )}
+          <h1>{current.name}</h1>
+          <div className="present-progress" aria-label={`${Math.round(progress)} percent of section target`}>
+            <span style={{ width: `${progress}%` }} />
+          </div>
+          <div className={`present-exact-time ${exactTimeVisible || displayStyle !== "minimal" ? "present-exact-time--visible" : ""}`}>
+            {isOver
+              ? `+${formatTime(sectionElapsed - current.target)}`
+              : `${formatTime(sectionElapsed)} / ${formatTime(current.target)}`}
+          </div>
+          {displayStyle === "detailed" && (
+            <div className="present-detail-status">
+              {isOver ? "Over target" : progress >= 80 ? "Approaching target" : "On pace"}
+            </div>
+          )}
+          {displayStyle === "minimal" && isOver && !exactTimeVisible && (
+            <span className="present-overtime">+{formatTime(sectionElapsed - current.target)}</span>
+          )}
+          {!isLast && presentationMode === "group" ? (
+            <div className="present-next present-next--speaker">
+              <small>Up next</small>
+              <strong>{sections[activeIndex + 1].speaker}</strong>
+              <span>
+                {sections[activeIndex + 1].name}
+                {displayStyle === "detailed" && ` · ${formatTime(sections[activeIndex + 1].target)}`}
+              </span>
+            </div>
+          ) : !isLast ? (
+            <div className="present-next">
+              <span>
+                Next: {sections[activeIndex + 1].name}
+                {displayStyle === "detailed" && ` · ${formatTime(sections[activeIndex + 1].target)}`}
+              </span>
+            </div>
+          ) : (
+            <div className="present-next"><span>Final section</span></div>
+          )}
+        </section>
+
+        {!isRunning && <div className="present-paused">Paused</div>}
+
+        <button
+          className="present-advance"
+          onClick={(event) => {
+            event.stopPropagation();
+            nextPresentationSection();
+          }}
+          type="button"
+        >
+          <span>{isLast ? "Finish presentation" : "Next section"}</span>
+          <Icon name="chevron-right" size={24} />
+          <small>Advance when you are ready</small>
+        </button>
+      </main>
+    );
+  }
+
+  if (screen === "presentation-summary") {
+    const liveTotal = actualTimes.reduce((total, value) => total + (value || 0), 0);
+    const liveDifference = liveTotal - totalTarget;
+    const summaryLine = Math.abs(liveDifference) <= 1
+      ? "You finished right on target."
+      : `You finished ${formatTime(Math.abs(liveDifference))} ${liveDifference > 0 ? "over" : "early"}.`;
+    return (
+      <main className={`app-shell presentation-summary-screen mode--${presentationMode}`}>
+        <AppHeader account={account} onAccount={() => openAccount("presentation-summary")} onHome={goHome} />
+        <section className="page-content">
+          <span className="eyebrow">Presentation complete</span>
+          <h1>Nicely done.</h1>
+          <p className="review-title">{title}</p>
+
+          <div className="live-summary">
+            <span>Total time</span>
+            <strong>{formatTime(liveTotal)}</strong>
+            <small>{formatTime(totalTarget)} target</small>
+            <p>{summaryLine}</p>
+          </div>
+
+          <button
+            aria-expanded={showLiveBreakdown}
+            className="breakdown-toggle"
+            onClick={() => setShowLiveBreakdown((value) => !value)}
+            type="button"
+          >
+            See section breakdown <Icon name="chevron-down" size={19} />
+          </button>
+
+          {showLiveBreakdown && (
+            <div className="live-breakdown">
+              {sections.map((section, index) => (
+                <div key={section.id}>
+                  <span>
+                    <strong>{section.name}</strong>
+                    {presentationMode === "group" && <small>{section.speaker}</small>}
+                  </span>
+                  <time>{formatTime(actualTimes[index] || 0)} / {formatTime(section.target)}</time>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {liveRunSaved && (
+            <div className="history-entry">
+              <div>
+                <span className="live-badge">Live</span>
+                <strong>{title}</strong>
+              </div>
+              <span>{formatTime(liveTotal)} · Saved just now</span>
+            </div>
+          )}
+        </section>
+        <div className="review-actions">
+          <Button
+            className="button--full"
+            icon="check"
+            onClick={() => setLiveRunSaved(true)}
+            disabled={liveRunSaved}
+          >
+            {liveRunSaved ? "Saved to history" : "Save run"}
+          </Button>
+          <Button className="button--full" onClick={() => setScreen("ready")} variant="secondary">
+            Done
           </Button>
         </div>
       </main>
@@ -704,10 +1469,12 @@ export default function App() {
     const isLast = activeIndex === sections.length - 1;
     const progress = Math.min(100, (sectionElapsed / current.target) * 100);
     return (
-      <main className={`timer-screen mode--${presentationMode} ${isOver ? "timer-screen--over" : ""}`}>
+      <main className={`timer-screen mode--${presentationMode} timer-color--muted ${isOver ? "timer-screen--over" : ""}`}>
         <header className="timer-header">
           <Brand onClick={goHome} />
-          <span className="sound-pill"><Icon name="sound-off" size={17} /> Sound off</span>
+          <Button className="home-button" icon="home" onClick={goHome} variant="ghost">
+            Home
+          </Button>
         </header>
         <section className="timer-content">
           <div className="timer-position">
@@ -715,13 +1482,22 @@ export default function App() {
             <span>Total {formatTime(totalElapsed)} / {formatTime(totalTarget)}</span>
           </div>
           <div className="total-progress"><span style={{ width: `${Math.min(100, (totalElapsed / totalTarget) * 100)}%` }} /></div>
-          <div className="current-section">
+          <div className="current-section rehearsal-section-transition" key={`section-heading-${current.id}`}>
             <div className="eyebrow">
-              {presentationMode === "group" ? `${current.speaker} is presenting` : "Now presenting"}
+              {presentationMode === "group" ? (
+                <>
+                  <span>Presenting</span>
+                  <strong>{current.speaker}</strong>
+                </>
+              ) : "Now presenting"}
             </div>
             <h1>{current.name}</h1>
           </div>
-          <div className="timer-dial" style={{ "--progress": `${progress * 3.6}deg` } as CSSProperties}>
+          <div
+            className="timer-dial rehearsal-section-transition"
+            key={`section-timer-${current.id}`}
+            style={{ "--progress": `${progress * 3.6}deg` } as React.CSSProperties}
+          >
             <div className="timer-dial__inner">
               <span>{isOver ? "Over by" : "Time remaining"}</span>
               <strong>{isOver ? "+" : ""}{formatTime(Math.abs(remaining))}</strong>
@@ -734,29 +1510,82 @@ export default function App() {
           {presentationMode === "group" && !isLast && (
             <div className="next-speaker">
               <span>Up next</span>
-              <strong>
-                {sections[activeIndex + 1].speaker === current.speaker
-                  ? `${current.speaker} continues`
-                  : `Handoff to ${sections[activeIndex + 1].speaker}`}
-              </strong>
-              <small>{sections[activeIndex + 1].name}</small>
+              <strong>{sections[activeIndex + 1].speaker}</strong>
+              <small>Next section · {sections[activeIndex + 1].name}</small>
             </div>
           )}
           <div className="timer-controls">
-            <Button
-              className="pause-button"
-              icon={isRunning ? "pause" : "play"}
-              onClick={pauseOrResume}
-              variant="secondary"
-            >
-              {isRunning ? "Pause" : "Resume"}
-            </Button>
-            <Button className="next-button" onClick={nextSection}>
+            <div className="rehearsal-actions">
+              <Button
+                ariaLabel="Go back to setup"
+                className="pause-button"
+                icon="edit"
+                onClick={() => {
+                  setResumeRehearsalAfterConfirm(isRunning);
+                  if (isRunning) freezeClock();
+                  setIsRunning(false);
+                  setConfirmingRehearsalSetup(true);
+                }}
+                variant="secondary"
+              >
+                Setup
+              </Button>
+              <Button
+                ariaLabel="Restart current section"
+                className="pause-button"
+                icon="restart"
+                onClick={restartCurrentSection}
+                variant="secondary"
+              >
+                Restart
+              </Button>
+              <Button
+                className="pause-button"
+                icon={isRunning ? "pause" : "play"}
+                onClick={toggleTimer}
+                variant="secondary"
+              >
+                {isRunning ? "Pause" : "Resume"}
+              </Button>
+            </div>
+            <Button className="next-button button--full" onClick={nextSection}>
               {isLast ? "Finish" : "Next section"} <Icon name="chevron-right" />
             </Button>
           </div>
-          <button className="end-link" onClick={() => finishRehearsal(true)} type="button">End rehearsal</button>
+          <button className="end-link" onClick={() => finishRehearsal()} type="button">End rehearsal</button>
         </section>
+        {confirmingRehearsalSetup && (
+          <div className="rehearsal-confirm" role="presentation">
+            <div
+              aria-describedby="rehearsal-confirm-description"
+              aria-labelledby="rehearsal-confirm-title"
+              aria-modal="true"
+              className="rehearsal-confirm__dialog"
+              role="dialog"
+            >
+              <h2 id="rehearsal-confirm-title">Return to setup?</h2>
+              <p id="rehearsal-confirm-description">
+                Your current rehearsal progress will be discarded.
+              </p>
+              <div>
+                <Button
+                  className="button--full"
+                  onClick={() => {
+                    setConfirmingRehearsalSetup(false);
+                    if (resumeRehearsalAfterConfirm) clock.current.since = performance.now();
+                    setIsRunning(resumeRehearsalAfterConfirm);
+                  }}
+                  variant="secondary"
+                >
+                  Keep rehearsing
+                </Button>
+                <Button className="button--full" onClick={resetToSetup} variant="danger">
+                  Return to setup
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     );
   }
@@ -776,11 +1605,11 @@ export default function App() {
   const largestSpeakerTime = Math.max(1, ...speakerResults.map((result) => result.actual));
   return (
     <main className={`app-shell review-screen mode--${presentationMode}`}>
-      <AppHeader onHome={goHome} />
+      <AppHeader account={account} onAccount={() => openAccount("review")} onHome={goHome} />
       <section className="page-content">
         <h1>Your pacing</h1>
         <p className="review-title">{title}</p>
-        {isIncomplete && <p className="incomplete-note"><Icon name="warning" size={16} /> Incomplete rehearsal</p>}
+        {rehearsalIncomplete && <p className="incomplete-note"><Icon name="warning" size={16} /> Incomplete rehearsal</p>}
 
         <div className="results-hero">
           <span>Actual time</span>
