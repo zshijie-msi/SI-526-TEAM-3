@@ -1,0 +1,24 @@
+name: Verify Zihe usability preview
+
+on:
+  push:
+    branches:
+      - feature/zihe-usability-welcome
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install
+        run: npm install --no-audit --no-fund
+      - name: Build production bundle
+        run: npm run build
+      - name: Run TypeScript checks
+        if: success()
+        run: npm run typecheck
