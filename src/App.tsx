@@ -41,6 +41,7 @@ type SavedPresentation = {
   displayStyle: DisplayStyle;
   colorMode: ColorMode;
   hapticsEnabled: boolean;
+  coachOutline?: string;
 };
 type IconName =
   | "arrow-left"
@@ -282,6 +283,7 @@ export default function App() {
   const [accountReturnScreen, setAccountReturnScreen] = useState<Screen>("concepts");
   const [saveAfterSignIn, setSaveAfterSignIn] = useState(false);
   const [saveConfirmation, setSaveConfirmation] = useState("");
+  const [coachOutline, setCoachOutline] = useState("");
   const nextId = useRef(2);
   const exactTimeTimeout = useRef<number | null>(null);
   // Timer state always comes from elapsed monotonic time, not from interval counts.
@@ -654,6 +656,7 @@ export default function App() {
     displayStyle,
     colorMode,
     hapticsEnabled,
+    coachOutline: coachOutline.trim(),
   });
 
   const savePresentation = (signedInAccount = account) => {
@@ -707,6 +710,7 @@ export default function App() {
   const startNewPresentation = (mode: PresentationMode) => {
     setPresentationMode(mode);
     setTitle("");
+    setCoachOutline("");
     setSections([{ id: 1, name: "Intro", target: 60, speaker: mode === "group" ? "Speaker 1" : undefined }]);
     setSpeakers(mode === "group" ? ["Speaker 1"] : []);
     setActiveSavedId(null);
@@ -721,6 +725,7 @@ export default function App() {
     setPresentationMode(presentation.presentationMode);
     setSections(presentation.sections);
     setSpeakers(presentation.speakers);
+    setCoachOutline(presentation.coachOutline ?? "");
     setActiveSavedId(presentation.id);
     nextId.current = Math.max(0, ...presentation.sections.map((section) => section.id)) + 1;
     setScreen("setup");
@@ -1285,6 +1290,23 @@ export default function App() {
               </div>
             ))}
           </div>
+          <details className="speech-coach-notes">
+            <summary>Optional speaking outline</summary>
+            <p>
+              Add key points or a script for a future AI content review. You can use
+              Speech Coach without any script. This field is saved only when you save
+              the presentation on this device.
+            </p>
+            <label htmlFor="coach-outline">Speaking notes or script (optional)</label>
+            <textarea
+              id="coach-outline"
+              rows={4}
+              maxLength={3000}
+              placeholder="Optional key points, outline, or script..."
+              value={coachOutline}
+              onChange={(event) => setCoachOutline(event.target.value)}
+            />
+          </details>
           <div className="launch-options">
             <h2>Choose how to begin</h2>
             <button className="launch-option launch-option--rehearse" onClick={startRehearsal} type="button">
