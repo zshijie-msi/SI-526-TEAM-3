@@ -36,7 +36,7 @@ export interface SpeechMetrics {
   sections: SectionSpeechMetrics[];
 }
 
-export function isChineseLanguage(language: string): boolean {
+export function isChineseLanguage(language: string = "en-US"): boolean {
   return language.toLowerCase().startsWith("zh");
 }
 
