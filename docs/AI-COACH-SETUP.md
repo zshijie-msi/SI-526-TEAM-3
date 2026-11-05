@@ -91,3 +91,24 @@ Explicitly ask the project owner for:
 - public beta access control and rate limits.
 
 Never paste API keys into GitHub, chats, browser code or Vite env variables.
+
+
+## Optional outline and gated DeepSeek review (prepared, not activated)
+
+- The **Ready** screen includes a collapsed optional outline/script field.
+  An outline is saved with the presentation only when the user clicks Save.
+  The free report explicitly does not claim semantic coverage analysis.
+- \`api/ai-feedback.ts\` provides a server-only, text-based review adapter for
+  \`deepseek-flash\` over the official chat completions endpoint.
+- **By default it returns HTTP 503 without calling any provider.**
+- The client review form is hidden unless \`VITE_AI_PAID_REVIEW_ENABLED=true\`.
+- Even then, the server requires ALL of:
+  \`AI_FEEDBACK_ENABLED=true\`, \`DEEPSEEK_API_KEY\` (server-only), and
+  \`AI_DEMO_ACCESS_CODE\` (a private, long 24+ character code).
+- The user must enter the access code and explicitly click a button labeled
+  **Generate AI feedback (may incur charges)** to send the transcript, outline,
+  and timing metrics; **raw audio is never sent to DeepSeek**.
+- \`.env.example\` documents the flags; \`.gitignore\` excludes local secrets.
+- These gates are a **private pilot**, not production-grade authorization.
+  Do not turn on the paid endpoint on a public site without persistent
+  rate limits, spend caps, usage visibility, consent and a retention policy.
