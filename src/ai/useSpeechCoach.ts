@@ -39,6 +39,7 @@ export function useSpeechCoach({
   totalElapsed: number;
 }) {
   const [enabled, setEnabled] = useState(false);
+  const [language, setLanguage] = useState("en-US");
   const [segments, setSegments] = useState<SpeechSegment[]>([]);
   const [interim, setInterim] = useState("");
   const [error, setError] = useState("");
@@ -72,7 +73,7 @@ export function useSpeechCoach({
     let restartTimer: number | null = null;
     let stopForError = false;
     const recognition = new Constructor();
-    recognition.lang = "en-US";
+    recognition.lang = language;
     recognition.continuous = true;
     recognition.interimResults = true;
 
@@ -89,6 +90,7 @@ export function useSpeechCoach({
             text: words,
             sectionId: latest.current.sectionId,
             atSecond: latest.current.totalElapsed,
+            language,
           });
         } else {
           interimPart = words;
@@ -138,12 +140,14 @@ export function useSpeechCoach({
       recognition.onerror = null;
       try { recognition.stop(); } catch { /* Browser already stopped. */ }
     };
-  }, [enabled, active]);
+  }, [enabled, active, language]);
 
   return {
     available,
     enabled,
     setEnabled,
+    language,
+    setLanguage,
     listening,
     error,
     segments,
