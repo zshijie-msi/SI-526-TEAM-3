@@ -18,5 +18,6 @@ jobs:
           cache-dependency-path: package.json
       - run: npm install --no-audit --no-fund
       - run: npm run typecheck
+      - run: npx tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --types node --skipLibCheck api/ai-feedback.ts
       - run: npm run build
       - run: node --experimental-strip-types --test tests/metrics.test.mjs
