@@ -82,3 +82,61 @@
   .speech-coach-toggle { padding: 8px 10px; font-size: 12px; }
   .speech-coach-panel { padding: 12px; max-height: 60vh; }
 }
+
+/* Optional outline on Ready screen. Folds closed until a user asks for it. */
+.speech-coach-notes {
+  margin: 16px 0;
+  padding: 13px 15px;
+  border: 1px solid #d5e4e3;
+  border-radius: 12px;
+  background: #f8fcfb;
+  color: #203741;
+}
+.speech-coach-notes summary { font-size: 14px; font-weight: 650; cursor: pointer; }
+.speech-coach-notes p { font-size: 12px; color: #536875; line-height: 1.5; margin: 12px 0; }
+.speech-coach-notes label { display: block; font-weight: 650; font-size: 12px; margin-bottom: 6px; }
+.speech-coach-notes textarea {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-height: 92px;
+  padding: 10px;
+  background: #fff;
+  color: #203741;
+  border: 1px solid #b9caca;
+  border-radius: 9px;
+  font: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+.speech-coach-remote {
+  margin-top: 15px;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #e5d5b1;
+  border-radius: 11px;
+}
+.speech-coach-remote p { font-size: 12px; color: #576774; }
+.speech-coach-remote label { display: block; font-size: 12px; margin: 8px 0 5px; }
+.speech-coach-remote input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 9px;
+  border: 1px solid #becbce;
+  border-radius: 8px;
+  margin-bottom: 9px;
+}
+.speech-coach-remote button {
+  width: 100%;
+  padding: 9px;
+  background: #e8f0ed;
+  color: #28525a;
+  border: 1px solid #8db5b0;
+  border-radius: 9px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.speech-coach-remote button:disabled { opacity: .55; cursor: not-allowed; }
+.speech-coach-remote-results { margin-top: 12px; border-top: 1px solid #dce7e7; }
