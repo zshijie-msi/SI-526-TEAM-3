@@ -81,6 +81,7 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
       signal: AbortSignal.timeout(20000),
       body: JSON.stringify({
         model: "deepseek-flash",
+        thinking: { type: "disabled" },
         max_tokens: 450,
         temperature: 0.3,
         response_format: { type: "json_object" },
