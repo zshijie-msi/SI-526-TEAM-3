@@ -106,7 +106,9 @@ export function useSpeechCoach({
         setError("Microphone or speech recognition access was denied. Check browser permissions.");
         setEnabled(false);
       } else {
+        stopForError = true;
         setError("Speech recognition failed (" + event.error + "). You can keep using the timer.");
+        setEnabled(false);
       }
     };
 
