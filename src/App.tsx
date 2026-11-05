@@ -1546,7 +1546,7 @@ export default function App() {
           </div>
 
           {speechCoach.segments.length > 0 && (
-            <CoachReport metrics={speechMetrics} transcript={speechCoach.transcript} />
+            <CoachReport metrics={speechMetrics} transcript={speechCoach.transcript} outline={coachOutline} />
           )}
 
           <button
@@ -1780,7 +1780,7 @@ export default function App() {
         </div>
 
         {speechCoach.segments.length > 0 && (
-          <CoachReport metrics={speechMetrics} transcript={speechCoach.transcript} />
+          <CoachReport metrics={speechMetrics} transcript={speechCoach.transcript} outline={coachOutline} />
         )}
 
         {presentationMode === "group" && (
