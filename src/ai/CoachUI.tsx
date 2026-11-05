@@ -22,7 +22,8 @@ export function CoachDock({
 }: CoachDockProps) {
   const [expanded, setExpanded] = useState(false);
   return (
-    <aside className="speech-coach-dock" aria-label="Optional speech pace coach">
+    <aside className="speech-coach-dock" aria-label="Optional speech pace coach"
+      onClick={(event) => event.stopPropagation()}>
       <button
         type="button"
         className="speech-coach-toggle"
