@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import tickTockIcon from "./assets/tick-tock-icon.png";
 import tickTockWordmark from "./assets/tick-tock-wordmark.png";
 import { CoachDock, CoachReport } from "./ai/CoachUI";
-import { countEnglishWords, livePaceCue, summarizeSpeech } from "./ai/metrics";
+import { countSpeechUnits, livePaceCue, summarizeSpeech } from "./ai/metrics";
 import { useSpeechCoach } from "./ai/useSpeechCoach";
 
 type Section = {
@@ -306,16 +306,17 @@ export default function App() {
     [sections, actualTimes, screen, activeIndex, sectionElapsed],
   );
   const speechMetrics = useMemo(
-    () => summarizeSpeech(speechCoach.segments, coachTimedSections, totalElapsed),
-    [speechCoach.segments, coachTimedSections, totalElapsed],
+    () => summarizeSpeech(speechCoach.segments, coachTimedSections, totalElapsed, speechCoach.language),
+    [speechCoach.segments, coachTimedSections, totalElapsed, speechCoach.language],
   );
   const currentSpeechWords = speechCoach.segments
     .filter((segment) => segment.sectionId === sections[activeIndex]?.id)
-    .reduce((sum, segment) => sum + countEnglishWords(segment.text), 0);
+    .reduce((sum, segment) => sum + countSpeechUnits(segment.text, segment.language ?? speechCoach.language), 0);
   const coachCue = livePaceCue({
     target: sections[activeIndex]?.target ?? 0,
     sectionElapsed,
     sectionWords: currentSpeechWords,
+    language: speechCoach.language,
   });
 
   const totalTarget = useMemo(
@@ -1443,6 +1444,11 @@ export default function App() {
           words={speechMetrics.words}
           wpm={speechMetrics.wpm}
           cue={coachCue}
+          language={speechCoach.language}
+          languageLocked={speechCoach.segments.length > 0}
+          onLanguageChange={speechCoach.setLanguage}
+          unitLabel={speechMetrics.unitLabel}
+          rateLabel={speechMetrics.rateLabel}
           onToggle={speechCoach.setEnabled}
         />
         <div className="present-actions" onClick={(event) => event.stopPropagation()}>
@@ -1631,6 +1637,11 @@ export default function App() {
           words={speechMetrics.words}
           wpm={speechMetrics.wpm}
           cue={coachCue}
+          language={speechCoach.language}
+          languageLocked={speechCoach.segments.length > 0}
+          onLanguageChange={speechCoach.setLanguage}
+          unitLabel={speechMetrics.unitLabel}
+          rateLabel={speechMetrics.rateLabel}
           onToggle={speechCoach.setEnabled}
         />
         <section className="timer-content">
