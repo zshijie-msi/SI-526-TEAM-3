@@ -6,9 +6,8 @@ The pilot is based on \`feature/zihe-usability-welcome\`, not the old \`main\`.
 
 1. Rehearse and Present both have an **optional, collapsed Speech Coach**.
 2. The user opens it and explicitly clicks **Enable microphone**.
-3. Browser SpeechRecognition transcribes English speech. On some browsers this
-   happens through a browser-vendor online speech service (not local/offline).
-4. A deterministic pacing engine estimates words per minute, shows brief cues,
+3. Browser SpeechRecognition offers a **manual language selector**: English, Simplified/Traditional Chinese, Spanish and French. Browser recognition quality and language availability vary. On some browsers this happens through a browser-vendor online speech service (not local/offline).
+4. A deterministic pacing engine estimates words per minute for English and approximate character/word units per minute for Chinese, shows brief cues,
    and summarizes recognized speech by active section. It uses the timer's
    measured active duration. No generative model is involved.
 5. Rehearse and Present result screens show a section-level pace report
@@ -25,7 +24,7 @@ The pilot is based on \`feature/zihe-usability-welcome\`, not the old \`main\`.
 - SpeechRecognition is not available across all browsers; Chrome/Edge are best
   for initial desktop tests. It can use an external recognition service.
 - Browser speech results may be late, incomplete or duplicated after restarts.
-  The English word count and WPM are rough estimates, not graded speech quality.
+  The English WPM and Chinese character/word units per minute are rough estimates, not graded speech quality.
 - Per-speaker grouping follows the manually selected presentation **section**,
   not voice identification; overlapping speakers are not separated.
 - The transcript is not recorded audio and cannot verify pronunciation,
@@ -112,3 +111,41 @@ Never paste API keys into GitHub, chats, browser code or Vite env variables.
 - These gates are a **private pilot**, not production-grade authorization.
   Do not turn on the paid endpoint on a public site without persistent
   rate limits, spend caps, usage visibility, consent and a retention policy.
+
+
+## 2026-11-05 — Multilingual free-mode update & next realtime stage
+
+The no-cost browser prototype can select English (\`en-US\`), Mandarin simplified
+(\`zh-CN\`), Mandarin traditional (\`zh-TW\`), Spanish (\`es-ES\`) or French
+(\`fr-FR\`) **before** enabling the microphone. The language is locked once
+speech has been captured in a run to avoid mixing incompatible rate scales.
+Browser Web Speech API availability and language accuracy are not guaranteed.
+This **does not auto-detect** a speaker switching languages.
+
+For Chinese, whitespace-based English WPM is invalid. The prototype uses
+Han character counts plus any Latin-language words and labels the combined rate
+**approximate units/min**; English uses estimated WPM. Only English-specific
+high/low WPM suggestions apply to \`en-US\`. Chapter deadline cues work in all
+languages; Chinese section cues are shown in Chinese.
+
+### Future true realtime multilingual analysis (requires provider approval)
+
+Audio in consented browser session → streaming ASR with partial transcript
+deltas → (A) instant deterministic timing and non-blocking pace cues,
+(B) an async low-latency language-model evaluator triggered every few
+seconds or by completed section. The evaluator should never hold up the
+live timer or force the user to wait in the interface. Suppress duplicate,
+low-confidence, overly frequent, or late cues.
+
+OpenAI API supports \`gpt-live-transcribe\` realtime transcript deltas and
+\`languages: ["en", "zh-cn"]\` context for expected languages, but this
+is a separate paid API service, **not the current ChatGPT conversation**.
+An OpenAI language model may analyze the incremental text/outline alongside
+live timing in a second async path. Testing must include English, Mandarin,
+mixed-language speech, accents, background noise, interruptions, and latency.
+
+No OpenAI API keys or billing have been configured. Server-side protected
+keys, explicit mic consent and processing disclosures, spend caps, and
+rate limits are required before actual API calls.
+
+Docs: https://developers.openai.com/api/docs/guides/realtime-transcription
