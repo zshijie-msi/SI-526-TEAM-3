@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import tickTockIcon from "./assets/tick-tock-icon.png";
 import tickTockWordmark from "./assets/tick-tock-wordmark.png";
+import { CoachDock, CoachReport } from "./ai/CoachUI";
+import { countEnglishWords, livePaceCue, summarizeSpeech } from "./ai/metrics";
+import { useSpeechCoach } from "./ai/useSpeechCoach";
 
 type Section = {
   id: number;
@@ -285,6 +288,34 @@ export default function App() {
   const clock = useRef({ totalMs: 0, sectionMs: 0, since: null as number | null });
   const lastHapticSection = useRef<number | null>(null);
 
+  // Speech analysis is optional. Nothing starts until the user clicks Enable microphone.
+  const speechCoach = useSpeechCoach({
+    active: isRunning && (screen === "rehearse" || screen === "present"),
+    sectionId: sections[activeIndex]?.id ?? -1,
+    totalElapsed,
+  });
+  const coachTimedSections = useMemo(
+    () => sections.map((section, index) => ({
+      ...section,
+      actual: actualTimes[index] ??
+        ((screen === "rehearse" || screen === "present") && index === activeIndex
+          ? sectionElapsed : 0),
+    })),
+    [sections, actualTimes, screen, activeIndex, sectionElapsed],
+  );
+  const speechMetrics = useMemo(
+    () => summarizeSpeech(speechCoach.segments, coachTimedSections, totalElapsed),
+    [speechCoach.segments, coachTimedSections, totalElapsed],
+  );
+  const currentSpeechWords = speechCoach.segments
+    .filter((segment) => segment.sectionId === sections[activeIndex]?.id)
+    .reduce((sum, segment) => sum + countEnglishWords(segment.text), 0);
+  const coachCue = livePaceCue({
+    target: sections[activeIndex]?.target ?? 0,
+    sectionElapsed,
+    sectionWords: currentSpeechWords,
+  });
+
   const totalTarget = useMemo(
     () => sections.reduce((total, section) => total + section.target, 0),
     [sections],
@@ -471,6 +502,7 @@ export default function App() {
   };
 
   const startRehearsal = () => {
+    speechCoach.reset();
     clock.current = { totalMs: 0, sectionMs: 0, since: performance.now() };
     lastHapticSection.current = null;
     setActiveIndex(0);
@@ -483,6 +515,7 @@ export default function App() {
   };
 
   const startPresentation = () => {
+    speechCoach.reset();
     clock.current = { totalMs: 0, sectionMs: 0, since: performance.now() };
     lastHapticSection.current = null;
     setActiveIndex(0);
@@ -1377,6 +1410,19 @@ export default function App() {
           </div>
         </div>
 
+        <CoachDock
+          mode="Present"
+          available={speechCoach.available}
+          enabled={speechCoach.enabled}
+          listening={speechCoach.listening}
+          error={speechCoach.error}
+          interim={speechCoach.interim}
+          transcript={speechCoach.transcript}
+          words={speechMetrics.words}
+          wpm={speechMetrics.wpm}
+          cue={coachCue}
+          onToggle={speechCoach.setEnabled}
+        />
         <div className="present-actions" onClick={(event) => event.stopPropagation()}>
           <Button ariaLabel="Go back to setup" icon="edit" onClick={resetToSetup} variant="ghost">
             Setup
@@ -1477,6 +1523,10 @@ export default function App() {
             <p>{summaryLine}</p>
           </div>
 
+          {speechCoach.segments.length > 0 && (
+            <CoachReport metrics={speechMetrics} transcript={speechCoach.transcript} />
+          )}
+
           <button
             aria-expanded={showLiveBreakdown}
             className="breakdown-toggle"
@@ -1548,6 +1598,19 @@ export default function App() {
             variant="ghost"
           />
         </header>
+        <CoachDock
+          mode="Rehearse"
+          available={speechCoach.available}
+          enabled={speechCoach.enabled}
+          listening={speechCoach.listening}
+          error={speechCoach.error}
+          interim={speechCoach.interim}
+          transcript={speechCoach.transcript}
+          words={speechMetrics.words}
+          wpm={speechMetrics.wpm}
+          cue={coachCue}
+          onToggle={speechCoach.setEnabled}
+        />
         <section className="timer-content">
           <div className="timer-position">
             <span>{isLast ? "Last section" : `Section ${activeIndex + 1} of ${sections.length}`}</span>
@@ -1693,6 +1756,10 @@ export default function App() {
           </div>
           <small>{formatTime(totalTarget)} target</small>
         </div>
+
+        {speechCoach.segments.length > 0 && (
+          <CoachReport metrics={speechMetrics} transcript={speechCoach.transcript} />
+        )}
 
         {presentationMode === "group" && (
           <section className="speaker-results">
