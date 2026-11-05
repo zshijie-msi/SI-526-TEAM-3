@@ -1,0 +1,23 @@
+name: Speech Coach pilot checks
+
+on:
+  push:
+    branches:
+      - feature/ai-coach-free-pilot
+  pull_request:
+
+jobs:
+  typecheck-build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package.json
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npx tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --types node --skipLibCheck api/ai-feedback.ts
+      - run: npm run build
+      - run: node --experimental-strip-types --test tests/metrics.test.mjs
