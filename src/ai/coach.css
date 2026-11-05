@@ -140,3 +140,23 @@
 }
 .speech-coach-remote button:disabled { opacity: .55; cursor: not-allowed; }
 .speech-coach-remote-results { margin-top: 12px; border-top: 1px solid #dce7e7; }
+
+.speech-coach-language {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+.speech-coach-language select {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #b7cbd0;
+  border-radius: 8px;
+  background: #fff;
+  color: #172536;
+  font: inherit;
+  font-size: 13px;
+}
+.speech-coach-language select:disabled { opacity: .65; cursor: not-allowed; }
