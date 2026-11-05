@@ -13,12 +13,18 @@ interface CoachDockProps {
   words: number;
   wpm: number | null;
   cue: string | null;
+  unitLabel: string;
+  rateLabel: string;
+  language: string;
+  languageLocked: boolean;
+  onLanguageChange: (language: string) => void;
   onToggle: (enabled: boolean) => void;
 }
 
 export function CoachDock({
   mode, available, enabled, listening, error, interim, transcript,
-  words, wpm, cue, onToggle,
+  words, wpm, cue, unitLabel, rateLabel, language, languageLocked,
+  onLanguageChange, onToggle,
 }: CoachDockProps) {
   const [expanded, setExpanded] = useState(false);
   return (
@@ -39,9 +45,23 @@ export function CoachDock({
         <div className="speech-coach-panel">
           <h2>Practice pace</h2>
           <p className="speech-coach-explainer">
-            Optional English speech transcription and estimated words per minute.
-            Your {mode.toLowerCase()} timer works without this.
+            Optional live transcription and approximate speaking-rate feedback.
+            The {mode.toLowerCase()} timer works without a microphone.
           </p>
+          <label className="speech-coach-language">
+            <span>Speech language</span>
+            <select value={language} disabled={enabled || languageLocked}
+              onChange={(event) => onLanguageChange(event.target.value)}>
+              <option value="en-US">English</option>
+              <option value="zh-CN">中文（普通话，简体）</option>
+              <option value="zh-TW">中文（繁體）</option>
+              <option value="es-ES">Español</option>
+              <option value="fr-FR">Français</option>
+            </select>
+          </label>
+          {languageLocked && <p className="speech-coach-privacy">
+            Language is locked after speech is captured. Start a new run to change it.
+          </p>}
           {!available ? (
             <p className="speech-coach-error" role="status">
               This browser does not offer speech recognition. Try a current Chrome or Edge browser.
@@ -62,8 +82,8 @@ export function CoachDock({
           </p>
           {enabled && (
             <div className="speech-coach-stats">
-              <div><strong>{wpm ?? "—"}</strong><span>Estimated WPM</span></div>
-              <div><strong>{words}</strong><span>Words recognized</span></div>
+              <div><strong>{wpm ?? "—"}</strong><span>{rateLabel}</span></div>
+              <div><strong>{words}</strong><span>{unitLabel} recognized</span></div>
             </div>
           )}
           {enabled && cue && <p className="speech-coach-cue" role="status">{cue}</p>}
@@ -131,14 +151,16 @@ export function CoachReport({
       <span className="speech-coach-kicker">Speech Coach · Local analysis</span>
       <h2>Speaking pace</h2>
       <p>
-        {metrics.words} words recognized
-        {metrics.wpm !== null ? " · " + metrics.wpm + " estimated words/min" : ""}
+        {metrics.words} {metrics.unitLabel.toLowerCase()} recognized
+        {metrics.wpm !== null ? " · " + metrics.wpm + " " + metrics.rateLabel : ""}
       </p>
       <div className="speech-coach-section-list">
         {metrics.sections.filter((section) => section.words > 0).map((section) => (
           <div key={section.id}>
             <strong>{section.name}{section.speaker ? " · " + section.speaker : ""}</strong>
-            <span>{section.words} words{section.wpm !== null ? " · " + section.wpm + " WPM" : ""}</span>
+            <span>{section.words} {metrics.unitLabel.toLowerCase()}
+              {section.wpm !== null ? " · " + section.wpm + " " + metrics.rateLabel : ""}
+            </span>
           </div>
         ))}
       </div>
@@ -181,6 +203,7 @@ export function CoachReport({
       )}
       <p className="speech-coach-footnote">
         Estimates only; automatic transcription may contain errors.
+        Chinese metrics approximate characters plus Latin words; other languages use approximate word counts.
         The free report is local timing analysis, not an AI model evaluation or a saved recording.
       </p>
     </section>
