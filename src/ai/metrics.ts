@@ -72,8 +72,10 @@ export function summarizeSpeech(
 ): SpeechMetrics {
   // The free prototype locks its selected recognition language once speech is
   // captured. Switching between runs does not mix incompatible measurements.
-  const language = segments[0]?.language ?? selectedLanguage;
-  const chinese = isChineseLanguage(language);
+  const detected = segments.map((segment) => segment.language ?? selectedLanguage);
+  const language = detected[0] ?? selectedLanguage;
+  const chinese = detected.some((value) => isChineseLanguage(value));
+  const mixed = new Set(detected).size > 1;
   const sections = timedSections.map((section) => {
     const words = segments
       .filter((item) => item.sectionId === section.id)
@@ -93,8 +95,9 @@ export function summarizeSpeech(
     words,
     wpm: wordsPerMinute(words, totalActiveSeconds),
     language,
-    unitLabel: chinese ? "Chinese characters / English words" : "Words",
-    rateLabel: chinese ? "Units/min (approx.)" : "WPM (estimate)",
+    unitLabel: mixed ? "Mixed speech units" :
+      chinese ? "Chinese characters / English words" : "Words",
+    rateLabel: chinese || mixed ? "Units/min (approx.)" : "WPM (estimate)",
     sections,
   };
 }
