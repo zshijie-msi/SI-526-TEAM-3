@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { LiveAnalysisControls, type LiveAnalysisUIProps } from "./LiveUI";
 import { localSuggestions, type SpeechMetrics } from "./metrics";
 import "./coach.css";
 
@@ -18,13 +19,21 @@ interface CoachDockProps {
   language: string;
   languageLocked: boolean;
   onLanguageChange: (language: string) => void;
+  provider: "browser" | "qwen";
+  onProviderChange: (provider: "browser" | "qwen") => void;
+  relayConfigured: boolean;
+  relayIsMock: boolean;
+  relayCode: string;
+  onRelayCodeChange: (code: string) => void;
   onToggle: (enabled: boolean) => void;
+  live: LiveAnalysisUIProps;
 }
 
 export function CoachDock({
   mode, available, enabled, listening, error, interim, transcript,
   words, wpm, cue, unitLabel, rateLabel, language, languageLocked,
-  onLanguageChange, onToggle,
+  onLanguageChange, onToggle, provider, onProviderChange,
+  relayConfigured, relayIsMock, relayCode, onRelayCodeChange, live,
 }: CoachDockProps) {
   const [expanded, setExpanded] = useState(false);
   return (
@@ -52,6 +61,7 @@ export function CoachDock({
             <span>Speech language</span>
             <select value={language} disabled={enabled || languageLocked}
               onChange={(event) => onLanguageChange(event.target.value)}>
+              {provider === "qwen" && <option value="auto">Auto-detect (Qwen relay)</option>}
               <option value="en-US">English</option>
               <option value="zh-CN">中文（普通话，简体）</option>
               <option value="zh-TW">中文（繁體）</option>
@@ -62,6 +72,33 @@ export function CoachDock({
           {languageLocked && <p className="speech-coach-privacy">
             Language is locked after speech is captured. Start a new run to change it.
           </p>}
+          {relayConfigured && (
+            <div className="speech-coach-source">
+              <label htmlFor="speech-engine">Speech recognition</label>
+              <select id="speech-engine" value={provider} disabled={enabled || languageLocked}
+                onChange={(event) => {
+                  const next = event.target.value as "browser" | "qwen";
+                  if (next === "browser" && language === "auto") onLanguageChange("en-US");
+                  onProviderChange(next);
+                }}>
+                <option value="browser">Browser recognition (free fallback)</option>
+                <option value="qwen">{relayIsMock ? "Qwen relay simulation (no charge)" :
+                  "Qwen real-time ASR (requires approved billing)"}</option>
+              </select>
+              {provider === "qwen" && (
+                <>
+                  <label htmlFor="speech-relay-code">Private pilot access code</label>
+                  <input id="speech-relay-code" autoComplete="off" type="password"
+                    value={relayCode} onChange={(e) => onRelayCodeChange(e.target.value)}
+                    disabled={enabled} placeholder="24+ characters, provided by project owner" />
+                  <p className="speech-coach-privacy">
+                    {relayIsMock ? "Simulation only: this mode does not send audio to any model." :
+                    "This sends microphone audio to the configured Qwen relay. Provider fees may apply. Only use with project approval."}
+                  </p>
+                </>
+              )}
+            </div>
+          )}
           {!available ? (
             <p className="speech-coach-error" role="status">
               This browser does not offer speech recognition. Try a current Chrome or Edge browser.
@@ -77,8 +114,11 @@ export function CoachDock({
             </button>
           )}
           <p className="speech-coach-privacy">
-            You control when the mic is on. Some browsers send audio to their speech
-            service for transcription. Tick-Tock does not store or upload the transcript.
+            You control when the microphone is on. {provider === "browser" ?
+              "Your browser may use a vendor speech service for transcription." :
+              relayIsMock ? "This local mock relay does not call a speech model." :
+              "Your audio is streamed through the private relay to Qwen."}
+            {" "}Tick-Tock does not save raw audio or transcripts automatically.
           </p>
           {enabled && (
             <div className="speech-coach-stats">
@@ -88,6 +128,7 @@ export function CoachDock({
           )}
           {enabled && cue && <p className="speech-coach-cue" role="status">{cue}</p>}
           {error && <p className="speech-coach-error" role="alert">{error}</p>}
+          <LiveAnalysisControls {...live} />
           {enabled && (
             <div className="speech-coach-transcript">
               <strong>Live transcript</strong>

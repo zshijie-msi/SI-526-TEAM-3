@@ -1,9 +1,10 @@
-name: Speech Coach pilot checks
+name: Tick-Tock AI Coach pre-billing checks
 
 on:
   push:
     branches:
       - feature/ai-coach-free-pilot
+      - feature/ai-coach-history-realtime-integration
   pull_request:
 
 jobs:
@@ -15,9 +16,20 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: package.json
-      - run: npm install --no-audit --no-fund
-      - run: npm run typecheck
-      - run: npx tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --types node --skipLibCheck api/ai-feedback.ts
-      - run: npm run build
-      - run: node --experimental-strip-types --test tests/metrics.test.mjs
+          cache-dependency-path: package-lock.json
+      - name: Install app dependencies
+        run: npm ci --no-audit --no-fund
+      - name: App typecheck
+        run: npm run typecheck
+      - name: Paid API scaffolds typecheck (never called)
+        run: npx tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --types node --skipLibCheck api/ai-feedback.ts api/live-coach.ts
+      - name: Build
+        run: npm run build
+      - name: Unit tests for history, pacing and mock API
+        run: node --experimental-strip-types --test tests/*.test.mjs
+      - name: Install relay dependencies
+        working-directory: services/qwen-asr-relay
+        run: npm ci --no-audit --no-fund
+      - name: Free mock relay integration tests
+        working-directory: services/qwen-asr-relay
+        run: npm test

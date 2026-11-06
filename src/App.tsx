@@ -4,6 +4,11 @@ import tickTockWordmark from "./assets/tick-tock-wordmark.png";
 import { CoachDock, CoachReport } from "./ai/CoachUI";
 import { countSpeechUnits, livePaceCue, summarizeSpeech } from "./ai/metrics";
 import { useSpeechCoach } from "./ai/useSpeechCoach";
+import { createRehearsalRun, historyForPresentation, historyOwner, readHistory, upsertHistory, writeHistory } from "./ai/history";
+import { buildHistoryHints, cueForSection } from "./ai/historyInsights";
+import { HistoryPanel, PresentHistoryHint, SaveRehearsalPanel } from "./ai/HistoryUI";
+import { LiveCueOverlay } from "./ai/LiveUI";
+import { useLiveFeedback } from "./ai/useLiveFeedback";
 
 type Section = {
   id: number;
@@ -277,6 +282,15 @@ export default function App() {
     }
   });
   const [activeSavedId, setActiveSavedId] = useState<string | null>(null);
+  // Stable identifier for unsaved rehearsals; also becomes the Saved Presentation ID.
+  const [historyPresentationId, setHistoryPresentationId] = useState<string>(() => crypto.randomUUID());
+  const [historyRuns, setHistoryRuns] = useState(() => readHistory(window.localStorage));
+  const [saveHistoryTranscript, setSaveHistoryTranscript] = useState(false);
+  const [savedHistoryRunId, setSavedHistoryRunId] = useState<string | null>(null);
+  const [historySaveError, setHistorySaveError] = useState("");
+  const [historyHintsEnabled, setHistoryHintsEnabled] = useState(true);
+  const [dismissedHintSection, setDismissedHintSection] = useState<number | null>(null);
+  const [currentRehearsalId, setCurrentRehearsalId] = useState(() => crypto.randomUUID());
   const [accountName, setAccountName] = useState("");
   const [accountEmail, setAccountEmail] = useState("");
   const [accountError, setAccountError] = useState("");
@@ -318,6 +332,29 @@ export default function App() {
     sectionWords: currentSpeechWords,
     language: speechCoach.language,
   });
+
+  const effectiveHistoryId = activeSavedId ?? historyPresentationId;
+  const historyOwnerKey = historyOwner(account?.email);
+  const presentationHistory = useMemo(
+    () => historyForPresentation(historyRuns, historyOwnerKey, effectiveHistoryId),
+    [historyRuns, historyOwnerKey, effectiveHistoryId],
+  );
+  const historyHints = useMemo(
+    () => buildHistoryHints({ runs: presentationHistory, sections, outline: coachOutline }),
+    [presentationHistory, sections, coachOutline],
+  );
+  const liveFeedback = useLiveFeedback({
+    running: isRunning, screen, segments: speechCoach.segments,
+    interim: speechCoach.interim, language: speechCoach.language,
+    sectionName: sections[activeIndex]?.name ?? "",
+    sectionElapsed, target: sections[activeIndex]?.target ?? 0,
+    outline: coachOutline, historyHints,
+  });
+  const currentHistoryHint =
+    screen === "present" && historyHintsEnabled && sectionElapsed < 9 &&
+    dismissedHintSection !== activeIndex
+      ? cueForSection(historyHints, sections[activeIndex]?.id ?? -1)
+      : null;
 
   const totalTarget = useMemo(
     () => sections.reduce((total, section) => total + section.target, 0),
@@ -506,6 +543,11 @@ export default function App() {
 
   const startRehearsal = () => {
     speechCoach.reset();
+    liveFeedback.reset();
+    setCurrentRehearsalId(crypto.randomUUID());
+    setSavedHistoryRunId(null);
+    setSaveHistoryTranscript(false);
+    setHistorySaveError("");
     clock.current = { totalMs: 0, sectionMs: 0, since: performance.now() };
     lastHapticSection.current = null;
     setActiveIndex(0);
@@ -519,6 +561,8 @@ export default function App() {
 
   const startPresentation = () => {
     speechCoach.reset();
+    liveFeedback.reset();
+    setDismissedHintSection(null);
     clock.current = { totalMs: 0, sectionMs: 0, since: performance.now() };
     lastHapticSection.current = null;
     setActiveIndex(0);
@@ -573,6 +617,7 @@ export default function App() {
   };
 
   const nextPresentationSection = () => {
+    setDismissedHintSection(null);
     const { sectionMs, totalMs } = snapshot();
     const nextActual = [...actualTimes];
     nextActual[activeIndex] = sectionMs / 1000;
@@ -660,6 +705,50 @@ export default function App() {
     coachOutline: coachOutline.trim(),
   });
 
+  const saveRehearsalHistory = () => {
+    if (speechCoach.provider === "qwen" && speechCoach.relayIsMock && speechCoach.segments.length > 0) {
+      setHistorySaveError("Mock ASR data is not real speech and cannot be saved to your practice history.");
+      return;
+    }
+    const run = createRehearsalRun({
+      id: currentRehearsalId,
+      presentationId: effectiveHistoryId,
+      owner: historyOwnerKey,
+      title: title.trim() || "Untitled presentation",
+      presentationMode,
+      timedSections: coachTimedSections,
+      segments: speechCoach.segments,
+      metrics: speechMetrics,
+      duration: totalElapsed,
+      includeTranscript: saveHistoryTranscript,
+    });
+    const next = upsertHistory(historyRuns, run);
+    if (!writeHistory(window.localStorage, next)) {
+      setHistorySaveError("Browser storage is full or unavailable. Nothing was saved.");
+      return;
+    }
+    setHistoryRuns(next);
+    setSavedHistoryRunId(run.id);
+    setHistorySaveError("");
+  };
+
+  const deleteHistoryRun = (id: string) => {
+    const next = historyRuns.filter((run) => run.id !== id);
+    if (writeHistory(window.localStorage, next)) {
+      setHistoryRuns(next);
+      if (savedHistoryRunId === id) setSavedHistoryRunId(null);
+    }
+  };
+  const clearPresentationHistory = () => {
+    const next = historyRuns.filter(
+      (run) => !(run.presentationId === effectiveHistoryId && run.owner === historyOwnerKey),
+    );
+    if (writeHistory(window.localStorage, next)) {
+      setHistoryRuns(next);
+      setSavedHistoryRunId(null);
+    }
+  };
+
   const savePresentation = (signedInAccount = account) => {
     if (!signedInAccount) {
       setSaveAfterSignIn(true);
@@ -670,7 +759,7 @@ export default function App() {
       setFormError("Add a presentation title before saving.");
       return;
     }
-    const id = activeSavedId ?? crypto.randomUUID();
+    const id = activeSavedId ?? historyPresentationId;
     const saved = buildSavedPresentation(id, signedInAccount.email);
     setSavedPresentations((current) => [
       saved,
@@ -709,6 +798,7 @@ export default function App() {
   };
 
   const startNewPresentation = (mode: PresentationMode) => {
+    setHistoryPresentationId(crypto.randomUUID());
     setPresentationMode(mode);
     setTitle("");
     setCoachOutline("");
@@ -722,6 +812,7 @@ export default function App() {
   };
 
   const openSavedPresentation = (presentation: SavedPresentation) => {
+    setHistoryPresentationId(presentation.id);
     setTitle(presentation.title);
     setPresentationMode(presentation.presentationMode);
     setSections(presentation.sections);
@@ -1294,9 +1385,9 @@ export default function App() {
           <details className="speech-coach-notes">
             <summary>Optional speaking outline</summary>
             <p>
-              Add key points or a script for a future AI content review. You can use
-              Speech Coach without any script. This field is saved only when you save
-              the presentation on this device.
+              Speaking notes are optional. For the free history check, add a line like
+              "Intro: explain our main question" to track exact phrases across saved transcripts.
+              It cannot understand synonyms yet. Notes are saved with your presentation on this device.
             </p>
             <label htmlFor="coach-outline">Speaking notes or script (optional)</label>
             <textarea
@@ -1308,6 +1399,13 @@ export default function App() {
               onChange={(event) => setCoachOutline(event.target.value)}
             />
           </details>
+          <HistoryPanel runs={presentationHistory} hints={historyHints}
+            onDelete={deleteHistoryRun} onClear={clearPresentationHistory} compact />
+          <label className="history-checkbox" style={{ margin: "10px 0", display: "flex", gap: 9, fontSize: 13 }}>
+            <input type="checkbox" checked={historyHintsEnabled}
+              onChange={(event) => setHistoryHintsEnabled(event.target.checked)} />
+            Show brief history-based reminders in Present Mode
+          </label>
           <div className="launch-options">
             <h2>Choose how to begin</h2>
             <button className="launch-option launch-option--rehearse" onClick={startRehearsal} type="button">
@@ -1433,6 +1531,9 @@ export default function App() {
           </div>
         </div>
 
+        <PresentHistoryHint hint={liveFeedback.cue ? null : currentHistoryHint}
+          onDismiss={() => setDismissedHintSection(activeIndex)} />
+        <LiveCueOverlay cue={liveFeedback.cue} onDismiss={liveFeedback.dismiss} />
         <CoachDock
           mode="Present"
           available={speechCoach.available}
@@ -1447,6 +1548,13 @@ export default function App() {
           language={speechCoach.language}
           languageLocked={speechCoach.segments.length > 0}
           onLanguageChange={speechCoach.setLanguage}
+          provider={speechCoach.provider}
+          onProviderChange={speechCoach.setProvider}
+          relayConfigured={speechCoach.relayConfigured}
+          relayIsMock={speechCoach.relayIsMock}
+          relayCode={speechCoach.relayCode}
+          onRelayCodeChange={speechCoach.setRelayCode}
+          live={liveFeedback}
           unitLabel={speechMetrics.unitLabel}
           rateLabel={speechMetrics.rateLabel}
           onToggle={speechCoach.setEnabled}
@@ -1626,6 +1734,7 @@ export default function App() {
             variant="ghost"
           />
         </header>
+        <LiveCueOverlay cue={liveFeedback.cue} onDismiss={liveFeedback.dismiss} />
         <CoachDock
           mode="Rehearse"
           available={speechCoach.available}
@@ -1640,6 +1749,13 @@ export default function App() {
           language={speechCoach.language}
           languageLocked={speechCoach.segments.length > 0}
           onLanguageChange={speechCoach.setLanguage}
+          provider={speechCoach.provider}
+          onProviderChange={speechCoach.setProvider}
+          relayConfigured={speechCoach.relayConfigured}
+          relayIsMock={speechCoach.relayIsMock}
+          relayCode={speechCoach.relayCode}
+          onRelayCodeChange={speechCoach.setRelayCode}
+          live={liveFeedback}
           unitLabel={speechMetrics.unitLabel}
           rateLabel={speechMetrics.rateLabel}
           onToggle={speechCoach.setEnabled}
@@ -1793,6 +1909,11 @@ export default function App() {
         {speechCoach.segments.length > 0 && (
           <CoachReport metrics={speechMetrics} transcript={speechCoach.transcript} outline={coachOutline} />
         )}
+        <SaveRehearsalPanel saved={savedHistoryRunId === currentRehearsalId}
+          savingError={historySaveError} saveTranscript={saveHistoryTranscript}
+          setSaveTranscript={setSaveHistoryTranscript} onSave={saveRehearsalHistory} />
+        <HistoryPanel runs={presentationHistory} hints={historyHints}
+          onDelete={deleteHistoryRun} onClear={clearPresentationHistory} compact />
 
         {presentationMode === "group" && (
           <section className="speaker-results">

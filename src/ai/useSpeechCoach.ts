@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { SpeechSegment } from "./metrics";
+import { startRelayRecognition } from "./qwenClient";
 
 interface SpeechAlternative { transcript: string }
 interface SpeechResult { isFinal: boolean; 0: SpeechAlternative }
@@ -40,6 +41,11 @@ export function useSpeechCoach({
 }) {
   const [enabled, setEnabled] = useState(false);
   const [language, setLanguage] = useState("en-US");
+  const [provider, setProvider] = useState<"browser" | "qwen">("browser");
+  const [relayCode, setRelayCode] = useState("");
+  const relayUrl = import.meta.env.VITE_ASR_RELAY_URL ?? "";
+  const relayConfigured = Boolean(relayUrl && import.meta.env.VITE_ASR_RELAY_ENABLED === "true");
+  const relayIsMock = import.meta.env.VITE_ASR_RELAY_MODE === "mock";
   const [segments, setSegments] = useState<SpeechSegment[]>([]);
   const [interim, setInterim] = useState("");
   const [error, setError] = useState("");
@@ -47,7 +53,8 @@ export function useSpeechCoach({
   const latest = useRef({ sectionId, totalElapsed });
   latest.current = { sectionId, totalElapsed };
 
-  const available = Boolean(recognitionConstructor());
+  const available = provider === "browser"
+    ? Boolean(recognitionConstructor()) : relayConfigured;
   const reset = () => {
     setEnabled(false);
     setSegments([]);
@@ -57,7 +64,7 @@ export function useSpeechCoach({
   };
 
   useEffect(() => {
-    if (!enabled || !active) {
+    if (!enabled || !active || provider !== "browser") {
       setListening(false);
       setInterim("");
       return;
@@ -140,7 +147,40 @@ export function useSpeechCoach({
       recognition.onerror = null;
       try { recognition.stop(); } catch { /* Browser already stopped. */ }
     };
-  }, [enabled, active, language]);
+  }, [enabled, active, language, provider]);
+
+  useEffect(() => {
+    if (!enabled || !active || provider !== "qwen") return;
+    if (!relayConfigured || relayCode.length < 24) {
+      setError("The private relay URL and access code are required.");
+      setEnabled(false);
+      return;
+    }
+    setError("");
+    const stop = startRelayRecognition({
+      url: relayUrl,
+      accessCode: relayCode,
+      language,
+      onReady: () => { setListening(true); setError(""); },
+      onFinal: (text, locale) => {
+        setSegments((current) => [...current, {
+          text, sectionId: latest.current.sectionId,
+          atSecond: latest.current.totalElapsed, language: locale,
+        }]);
+      },
+      onPartial: setInterim,
+      onError: (message) => {
+        setError(message);
+        setListening(false);
+        setEnabled(false);
+      },
+    });
+    return () => {
+      stop();
+      setListening(false);
+      setInterim("");
+    };
+  }, [enabled, active, provider, language, relayCode, relayUrl, relayConfigured]);
 
   return {
     available,
@@ -148,6 +188,12 @@ export function useSpeechCoach({
     setEnabled,
     language,
     setLanguage,
+    provider,
+    setProvider,
+    relayCode,
+    setRelayCode,
+    relayConfigured,
+    relayIsMock,
     listening,
     error,
     segments,
