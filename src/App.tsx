@@ -243,7 +243,8 @@ function isMeaningfulDraft(draft: AutosaveDraft) {
     draft.sections[0].target === BLANK_INTRO.target &&
     !draft.sections[0].speaker;
   const editorHasText =
-    draft.editor.editingId !== null && Boolean(draft.editor.name || draft.editor.minutes || draft.editor.seconds);
+    draft.editor.editingId !== null &&
+    Boolean(draft.editor.name || Number(draft.editor.minutes || 0) || Number(draft.editor.seconds || 0));
   return Boolean(
     draft.title.trim() || draft.speakers.length || !onlyBlankIntro || editorHasText || draft.editor.newSpeaker.trim(),
   );
@@ -816,7 +817,8 @@ export default function App() {
   // so pressing Save never silently drops the section the user just typed.
   const commitOpenEditor = (): Section[] | null => {
     if (editingId === null) return sections;
-    const untouchedNewSection = editingId === 0 && !draftName.trim() && !draftMinutes && !draftSeconds;
+    const untouchedNewSection =
+      editingId === 0 && !draftName.trim() && !Number(draftMinutes || 0) && !Number(draftSeconds || 0);
     if (untouchedNewSection) {
       closeEditor();
       return sections;
@@ -1756,7 +1758,12 @@ export default function App() {
                   aria-required="true"
                   inputMode="numeric"
                   maxLength={2}
+                  // Leaving minutes empty shows a real 0 (empty already means 0 minutes).
+                  onBlur={() => {
+                    if (draftMinutes === "") setDraftMinutes("0");
+                  }}
                   onChange={(event) => setDraftMinutes(digitsOnly(event.target.value))}
+                  onFocus={(event) => event.target.select()}
                   placeholder="mm"
                   value={draftMinutes}
                 />
@@ -1769,9 +1776,10 @@ export default function App() {
                   inputMode="numeric"
                   maxLength={2}
                   onBlur={() => {
-                    if (draftSeconds.length === 1) setDraftSeconds(draftSeconds.padStart(2, "0"));
+                    if (draftSeconds.length < 2) setDraftSeconds(draftSeconds.padStart(2, "0"));
                   }}
                   onChange={(event) => setDraftSeconds(digitsOnly(event.target.value))}
+                  onFocus={(event) => event.target.select()}
                   placeholder="ss"
                   value={draftSeconds}
                 />
