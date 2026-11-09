@@ -3639,3 +3639,1029 @@ h3 {
 
 /* Clarify that an early end does not represent a completed run. */
 .incomplete-note { display: flex; align-items: center; gap: 6px; color: #986a28; font-size: 13px; margin: 7px 0 12px; }
+
+/* ---- From the Sign-In & Save Figma Make export (library + confirm dialog) ---- */
+.presentations-screen .page-content {
+  padding-bottom: 40px;
+}
+
+.presentations-screen h1 {
+  font-size: clamp(28px, 8vw, 34px);
+}
+
+.presentations-screen .lede {
+  margin-bottom: 22px;
+  font-size: 15px;
+}
+
+.create-presentation-button {
+  min-height: 54px;
+}
+
+.library-device-note {
+  margin: 12px 0 0;
+  color: #607385;
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.library-section .section-heading {
+  margin-top: 28px;
+}
+
+.library-section h2 {
+  font-size: 17px;
+}
+
+.library-card > button:first-child {
+  grid-template-columns: 36px minmax(0, 1fr);
+  align-items: start;
+  padding: 16px 6px 16px 14px;
+}
+
+.library-card .saved-presentation__icon {
+  width: 36px;
+  height: 36px;
+}
+
+.library-card .saved-presentation__copy strong {
+  margin-top: 6px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.library-card .saved-presentation__copy small,
+.library-card .saved-presentation__copy time {
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.library-card--draft {
+  grid-template-columns: 1fr;
+}
+
+.library-card--draft > button:first-child {
+  padding-right: 16px;
+}
+
+.presentation-status {
+  align-self: start;
+  border-radius: 5px;
+  padding: 2px 6px;
+  color: #315b78;
+  background: #eaf1f5;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.presentation-status--draft {
+  color: #7d5b13;
+  background: #fff3cd;
+}
+
+.presentation-card-action {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #294a66;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.library-empty {
+  margin-top: 34px;
+  border: 1px dashed #bfccd7;
+  border-radius: 16px;
+  padding: 28px 20px;
+  text-align: center;
+}
+
+.library-empty > span {
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 18px;
+}
+
+.library-empty h2 {
+  margin-bottom: 10px;
+  font-size: 18px;
+  line-height: 1.5;
+}
+
+.library-empty p {
+  margin: 0;
+  color: #607385;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.ready-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0 12px;
+}
+
+.ready-navigation .back-link {
+  min-height: 44px;
+  font-size: 12px;
+}
+
+.delete-presentation-dialog {
+  width: calc(100% - 40px);
+  max-width: 370px;
+  margin: auto;
+  border: 1px solid #d4dde4;
+  border-radius: 16px;
+  padding: 0;
+  color: #142c42;
+  background: #fff;
+  box-shadow: 0 20px 50px rgba(9, 28, 43, 0.24);
+}
+
+.delete-presentation-dialog::backdrop {
+  background: rgba(9, 28, 43, 0.58);
+  backdrop-filter: blur(4px);
+}
+
+.delete-presentation-dialog > div {
+  padding: 24px;
+}
+
+.delete-presentation-dialog h2 {
+  margin-bottom: 12px;
+  font-size: 22px;
+}
+
+.delete-presentation-dialog p {
+  color: #607385;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.delete-presentation-dialog .delete-presentation-name {
+  margin-bottom: 8px;
+  color: #294a66;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.delete-presentation-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+/* =====================================================================
+   Sprint 3 (TC): SCRUM-149, 125, 126, 134, 132
+   Kept at the end of the file so these rules win over earlier ones.
+   ===================================================================== */
+
+/* ---- Shared ---- */
+.field input::placeholder,
+.add-speaker input::placeholder {
+  color: #9aa8b4;
+  font-style: italic;
+  font-weight: 400;
+}
+
+.required-mark {
+  margin-left: 2px;
+  color: #b3261e;
+  font-weight: 800;
+}
+
+.required-legend {
+  margin: -8px 0 14px;
+  color: #607385;
+  font-size: 12px;
+}
+
+.unsaved-indicator {
+  margin: -12px 0 14px;
+  color: #8a5a00;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.unassigned-tag {
+  border-radius: 6px;
+  padding: 1px 6px;
+  color: #7a4b00 !important;
+  background: #fff1cc;
+  font-weight: 800;
+}
+
+.unassigned-note {
+  margin: 10px 0 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: #7a4b00;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.unassigned-note .icon {
+  flex: none;
+  margin-top: 1px;
+}
+
+/* ---- SCRUM-149: speaker list ---- */
+.team-panel__heading {
+  gap: 10px;
+}
+
+.team-panel__heading h2 {
+  margin: 0;
+}
+
+.speaker-empty {
+  margin: 0 0 12px;
+  color: #4b6275;
+  font-size: 13px;
+}
+
+.speaker-list {
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.speaker-row {
+  min-height: 52px;
+  padding: 0 4px 0 12px;
+  border: 1px solid #bdcad4;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: #fff;
+}
+
+.speaker-row__name {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: #183f5e;
+}
+
+.speaker-row__name > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.speaker-row__name strong {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.speaker-row__name small {
+  color: #607385;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.speaker-row__remove {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border: 0;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: #8b302d;
+  background: transparent;
+  cursor: pointer;
+}
+
+.speaker-row__remove:hover {
+  background: #fae8e5;
+}
+
+.speaker-row__remove:focus-visible {
+  outline: 3px solid #275978;
+  outline-offset: 2px;
+}
+
+.add-speaker {
+  grid-template-columns: 1fr;
+}
+
+.add-speaker input:focus {
+  border-color: #275978;
+  box-shadow: 0 0 0 3px rgba(39, 89, 120, 0.18);
+}
+
+.add-speaker__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.add-speaker__actions .button {
+  flex: 1;
+}
+
+.add-speaker .form-error {
+  margin: 0;
+}
+
+.add-speaker-button {
+  min-height: 46px;
+}
+
+/* ---- SCRUM-134: Add vs Edit editor, mm:ss entry ---- */
+.editor-card {
+  border-width: 2px;
+}
+
+.editor-card--add {
+  border-style: dashed;
+  border-color: #7a9cb5;
+  background: #f4f8fb;
+}
+
+.editor-card--edit {
+  margin-top: -4px;
+  margin-bottom: 8px;
+  border-style: solid;
+  border-color: #1f5c8a;
+  background: #fff;
+  box-shadow: 0 6px 18px rgba(20, 45, 70, 0.1);
+}
+
+.editor-card__top {
+  align-items: flex-start;
+}
+
+.editor-card__top h3 {
+  margin: 4px 0 0;
+}
+
+.editor-card__badge {
+  border-radius: 999px;
+  padding: 3px 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.editor-card--add .editor-card__badge {
+  color: #1e5a33;
+  background: #dff1e4;
+}
+
+.editor-card--edit .editor-card__badge {
+  color: #fff;
+  background: #1f5c8a;
+}
+
+.section-card--editing {
+  border: 2px solid #1f5c8a;
+  border-bottom-left-radius: 4px;
+  border-bottom-right-radius: 4px;
+}
+
+.editor-fields {
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.time-field {
+  margin: 0;
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.time-field legend {
+  margin-bottom: 8px;
+  padding: 0;
+}
+
+.time-field__inputs {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.time-field__unit {
+  width: 92px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.time-field__unit input {
+  text-align: center;
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.time-field__unit span {
+  color: #607385;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.time-field__colon {
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+  color: #294a66;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.time-field .field__hint {
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+/* ---- SCRUM-134: display options discoverable ---- */
+.display-style-detail {
+  margin: 10px 0 0;
+  color: #3d5468;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* ---- SCRUM-126: time per speaker ---- */
+.speaker-allocation {
+  margin-top: 18px;
+  border: 1px solid #c9d3dc;
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: #edf2f6;
+}
+
+.speaker-allocation__heading {
+  margin-bottom: 6px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.speaker-allocation__heading h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.speaker-allocation__heading span {
+  color: #607385;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.speaker-allocation__row {
+  min-height: 46px;
+  border-top: 1px solid #d4dde4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.speaker-allocation__row:first-of-type {
+  border-top: 0;
+}
+
+.speaker-allocation__row > span {
+  display: flex;
+  flex-direction: column;
+}
+
+.speaker-allocation__row strong {
+  color: #173e5e;
+  font-size: 14px;
+}
+
+.speaker-allocation__row small {
+  color: #607385;
+  font-size: 11px;
+}
+
+.speaker-allocation__row time {
+  color: #173e5e;
+  font-size: 16px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.speaker-allocation__row--unassigned strong {
+  color: #7a4b00;
+}
+
+.speaker-allocation__empty {
+  margin: 4px 0 0;
+  color: #607385;
+  font-size: 13px;
+}
+
+/* ---- SCRUM-132: save panel + library ---- */
+.presentation-save-panel strong {
+  font-size: 13px;
+}
+
+.presentation-save-panel small {
+  font-size: 11px;
+}
+
+.presentation-save-panel .button:disabled,
+.setup-heading .button:disabled {
+  border-color: #b9dcc4;
+  color: #256039;
+  background: #e4f3e8;
+  box-shadow: none;
+  opacity: 1;
+  cursor: default;
+}
+
+.presentation-save-panel + .save-confirmation {
+  margin-top: 10px;
+  margin-bottom: 0;
+}
+
+.presentation-library {
+  margin-bottom: 18px;
+}
+
+.presentation-library__heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.presentation-library__heading h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.presentation-library__heading span {
+  min-width: 24px;
+  border-radius: 12px;
+  padding: 2px 8px;
+  color: #315c7b;
+  background: #e3ecf2;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.presentation-library__empty {
+  margin: 0;
+  color: #607385;
+  font-size: 13px;
+}
+
+.saved-presentation--card {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.saved-presentation__main {
+  display: grid;
+  grid-template-columns: 40px 1fr 44px;
+  align-items: center;
+  gap: 10px;
+}
+
+.saved-presentation__copy time {
+  font-size: 11px;
+}
+
+.saved-presentation--card .saved-presentation__delete {
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  color: #8b302d;
+}
+
+.saved-presentation__actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.saved-presentation__actions .button {
+  min-height: 40px;
+  padding: 0 6px;
+  font-size: 12px;
+}
+
+/* ---- SCRUM-125: keep the Unassigned tag compact in lists ---- */
+.timeline__content .unassigned-tag,
+.presentation-ready__sections .unassigned-tag {
+  align-self: flex-start;
+  width: fit-content;
+  display: inline-block;
+}
+
+/* ---- SCRUM-152: current speaker dominant, Up next secondary (styles only) ---- */
+.timer-screen.mode--group .current-section .eyebrow strong {
+  font-size: clamp(34px, 10vw, 44px);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+}
+
+.timer-screen.mode--group.timer-color--bright .current-section .eyebrow strong {
+  color: #fff;
+}
+
+.timer-screen.mode--group .next-speaker {
+  min-height: 0;
+  padding: 8px 12px;
+  border-color: #d4dde4;
+  background: transparent;
+  box-shadow: none;
+}
+
+.timer-screen.mode--group .next-speaker span {
+  font-size: 10px;
+}
+
+.timer-screen.mode--group .next-speaker strong {
+  color: #4b6275;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.timer-screen.mode--group .next-speaker small {
+  font-size: 12px;
+}
+
+.present-speaker strong {
+  font-size: clamp(40px, 12vw, 56px);
+  font-weight: 800;
+  line-height: 1.02;
+}
+
+.present-next--speaker {
+  min-height: 0;
+}
+
+.present-next--speaker strong {
+  font-size: clamp(17px, 5vw, 20px);
+  font-weight: 700;
+  color: rgba(231, 237, 241, 0.72);
+}
+
+.present-next--speaker span {
+  font-size: 13px;
+}
+
+.present-screen.timer-color--muted .present-next--speaker strong {
+  color: #607987;
+}
+
+/* ---- Story 12 (SCRUM-133): autosave + per-mode library ---- */
+.concept-card__draft {
+  margin-top: 6px;
+  border-radius: 6px;
+  padding: 3px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  max-width: 100%;
+  color: #102a43;
+  background: rgba(255, 255, 255, 0.85);
+  font-size: 11px;
+  font-weight: 700;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.concept-card__draft .icon {
+  flex: none;
+}
+
+.autosave-status {
+  margin: -12px 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #256039;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.autosave-status--dirty {
+  color: #8a5a00;
+}
+
+.library-section--continue .section-heading {
+  margin-top: 4px;
+}
+
+.library-section--continue + .create-presentation-button {
+  margin-top: 6px;
+}
+
+.discard-draft {
+  margin-top: 2px;
+  min-height: 40px;
+  padding: 0;
+  color: #8b302d;
+  font-size: 12px;
+}
+
+.library-count {
+  min-width: 24px;
+  border-radius: 12px;
+  padding: 2px 8px;
+  color: #315c7b;
+  background: #e3ecf2;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.library-sign-in {
+  margin-top: 22px;
+}
+
+.presentations-screen .presentation-library {
+  margin-bottom: 0;
+}
+
+/* ---- SCRUM-153: complete vs incomplete rehearsal results ---- */
+.complete-note {
+  margin: 7px 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #256039;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.incomplete-note {
+  align-items: flex-start;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.incomplete-note .icon {
+  flex: none;
+  margin-top: 1px;
+}
+
+.status--incomplete {
+  color: #5a4718;
+  background: #f4e6bd;
+}
+
+.results-note {
+  margin: -4px 0 10px;
+  color: #607385;
+  font-size: 12px;
+}
+
+.result-row__icon--neutral {
+  color: #607385;
+  background: #eef2f5;
+}
+
+.result-row__status--neutral {
+  color: #607385;
+}
+
+.result-row--notreached {
+  opacity: 0.72;
+}
+
+/* ---- SCRUM-156: clearer display options + real preview ---- */
+.display-style-control button strong {
+  font-size: 12px;
+}
+
+.display-style-control button small {
+  font-size: 10px;
+}
+
+.color-mode-control button {
+  min-height: 56px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  text-transform: none;
+}
+
+.color-swatch {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px rgba(16, 42, 67, 0.18);
+}
+
+.color-swatch--muted {
+  background: linear-gradient(180deg, #e7eef1 62%, #7894a3 62%);
+}
+
+.color-swatch--bright {
+  background: linear-gradient(180deg, #082b4c 62%, #ffcb05 62%);
+}
+
+.color-mode-control__copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.color-mode-control__copy strong {
+  font-size: 12px;
+}
+
+.color-mode-control__copy small {
+  color: #748693;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.presentation-preview__hint {
+  margin-top: 8px;
+  font-size: 11px;
+  font-style: italic;
+  opacity: 0.7;
+}
+
+.presentation-preview__caption {
+  margin: 8px 2px 0;
+  color: #607385;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.presentation-preview--muted .presentation-preview__stage time,
+.presentation-preview--muted .presentation-preview__hint {
+  color: #294a66;
+}
+
+.presentation-customize-toggle small {
+  text-transform: none;
+}
+
+/* ---- Quiet Present view ---- */
+.quiet-setting {
+  margin-top: 18px;
+  border: 1px solid #c9d3dc;
+  border-radius: 14px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  background: #fff;
+}
+
+.quiet-setting > div {
+  min-width: 0;
+}
+
+.quiet-setting strong {
+  display: block;
+  color: #173e5e;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.quiet-setting small {
+  display: block;
+  margin-top: 4px;
+  color: #607385;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.quiet-setting .switch {
+  flex: none;
+}
+
+.quiet-setting--on {
+  border-color: #7a9cb5;
+  background: #f4f8fb;
+}
+
+.present-quiet-toggle {
+  min-height: 36px;
+  margin-left: auto;
+  border: 1px solid rgba(245, 247, 248, 0.35);
+  border-radius: 999px;
+  padding: 0 12px;
+  color: rgba(245, 247, 248, 0.92);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.present-quiet-toggle:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.present-quiet-toggle:focus-visible {
+  outline: 3px solid #ffcb05;
+  outline-offset: 2px;
+}
+
+.present-quiet-toggle[aria-pressed="true"] {
+  border-color: transparent;
+  color: #082b4c;
+  background: #ffcb05;
+}
+
+.present-screen.timer-color--muted .present-quiet-toggle {
+  border-color: rgba(41, 74, 102, 0.35);
+  color: #294a66;
+}
+
+.present-screen.timer-color--muted .present-quiet-toggle[aria-pressed="true"] {
+  border-color: transparent;
+  color: #fff;
+  background: #294a66;
+}
+
+.present-screen__meta {
+  margin-left: 12px;
+}
+
+.present-quiet-hint {
+  margin-top: 10px;
+  color: rgba(231, 237, 241, 0.6);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.present-screen.timer-color--muted .present-quiet-hint {
+  color: #607987;
+}
+
+/* ---- SCRUM-160: be clear about what is (not) saved ---- */
+.results-not-saved {
+  margin: 16px 0 12px;
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: #3d5468;
+  background: #edf2f6;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.results-not-saved .icon {
+  flex: none;
+  margin-top: 1px;
+}
+
+.save-confirmation {
+  min-height: 38px;
+  height: auto;
+  padding-block: 8px;
+  align-items: flex-start;
+  line-height: 1.4;
+}
+
+.save-confirmation .icon {
+  flex: none;
+  margin-top: 1px;
+}
+
+.presentation-save-panel .button {
+  flex: none;
+  white-space: nowrap;
+}
