@@ -143,31 +143,38 @@ export function CoachDock({
 }
 
 export function CoachReport({
-  metrics, transcript, outline = "",
+  metrics, transcript, outline = "", accessCode, onAccessCodeChange,
 }: {
   metrics: SpeechMetrics;
   transcript: string;
   outline?: string;
+  accessCode: string;
+  onAccessCodeChange(code: string): void;
 }) {
   const [showTranscript, setShowTranscript] = useState(false);
-  const [accessCode, setAccessCode] = useState("");
   const [remoteLoading, setRemoteLoading] = useState(false);
   const [remoteError, setRemoteError] = useState("");
   const [remoteReview, setRemoteReview] = useState<{ summary: string; nextSteps: string[] } | null>(null);
-  // Disabled in every deployment unless the owner explicitly enables the client flag.
-  // The server independently requires a second enable flag, a key and access code.
   const remoteVisible = import.meta.env.VITE_AI_PAID_REVIEW_ENABLED === "true";
+  const timedSections = metrics.sections.filter((section) => section.actual > 0);
+  const mostOver = timedSections.reduce<SpeechMetrics["sections"][number] | undefined>((worst, section) => {
+    const over = section.actual - section.target;
+    if (section.target <= 0 || over <= 0) return worst;
+    return !worst || over > worst.actual - worst.target ? section : worst;
+  }, undefined);
+  const hasTiming = timedSections.length > 0;
+  const canRequestReview = hasTiming && accessCode.trim().length >= 24 && !remoteLoading;
 
   const requestRemoteReview = async () => {
-    if (remoteLoading || !accessCode || transcript.length < 20 || transcript.length > 8000) return;
+    if (!canRequestReview) return;
     setRemoteLoading(true);
     setRemoteError("");
     try {
       const response = await fetch("/api/ai-feedback", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-AI-Demo-Code": accessCode },
+        headers: { "Content-Type": "application/json", "X-AI-Demo-Code": accessCode.trim() },
         body: JSON.stringify({
-          transcript,
+          transcript: transcript.slice(0, 8000),
           outline: outline.slice(0, 3000),
           wordsPerMinute: metrics.wpm,
           sections: metrics.sections,
@@ -186,9 +193,10 @@ export function CoachReport({
     }
   };
 
-  if (metrics.words === 0) return null;
+  if (metrics.words === 0 && !remoteVisible) return null;
   return (
     <section className="speech-coach-report" aria-label="Speech Coach review">
+      {metrics.words > 0 && <>
       <span className="speech-coach-kicker">Speech Coach · Local analysis</span>
       <h2>Speaking pace</h2>
       <p>
@@ -217,22 +225,29 @@ export function CoachReport({
           An optional outline is available, but this free report does not judge content coverage.
         </p>
       )}
+      </>}
       {remoteVisible && (
         <div className="speech-coach-remote">
           <h3>Optional remote AI review</h3>
           <p>
-            Only if you request it: sends transcript, optional outline, and timing
-            metrics to a paid text model. Provider charges may apply. No raw audio is sent.
+            Sends section timing and any available transcript or outline to the AI model only when you request feedback.
           </p>
           <label htmlFor="coach-demo-code">Private pilot access code</label>
           <input id="coach-demo-code" type="password" value={accessCode}
-            autoComplete="off" onChange={(event) => setAccessCode(event.target.value)}
+            autoComplete="off" onChange={(event) => onAccessCodeChange(event.target.value)}
             placeholder="Provided by project owner" />
           <button type="button" onClick={() => { void requestRemoteReview(); }}
-            disabled={remoteLoading || accessCode.length < 24 || transcript.length < 20 || transcript.length > 8000}>
-            {remoteLoading ? "Generating..." : "Generate AI feedback (may incur charges)"}
+            disabled={!canRequestReview}>
+            {remoteLoading ? "Generating..." : "Generate AI feedback"}
           </button>
-          {remoteError && <p role="alert">{remoteError}</p>}
+          {remoteError && (
+            <div role="alert">
+              <p>{remoteError}</p>
+              <p>{mostOver
+                ? `Timing suggestion: Try cutting one detail from ${mostOver.name}.`
+                : "Timing suggestion: Rehearse the transition into your next section."}</p>
+            </div>
+          )}
           {remoteReview && (
             <div className="speech-coach-remote-results">
               <strong>Model feedback · Review before trusting</strong>
@@ -242,11 +257,11 @@ export function CoachReport({
           )}
         </div>
       )}
-      <p className="speech-coach-footnote">
+      {metrics.words > 0 && <p className="speech-coach-footnote">
         Estimates only; automatic transcription may contain errors.
         Chinese metrics approximate characters plus Latin words; other languages use approximate word counts.
-        The free report is local timing analysis, not an AI model evaluation or a saved recording.
-      </p>
+        Local speaking pace uses estimated transcription counts.
+      </p>}
     </section>
   );
 }

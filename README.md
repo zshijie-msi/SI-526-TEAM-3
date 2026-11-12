@@ -33,18 +33,10 @@ Build: `npm run build`.
 
 Figma Make-only Vite plugins were removed to make the app standalone. The GitHub project's previous timestamp-based timer technique has been adapted for Rehearse and Present. Existing `main` is preserved for code review.
 
-## Sprint 4 AI Coach (feature/sprint-4 only)
+## Sprint 4 AI Coach
 
-This branch adds an optional Speech Coach on top of the Sprint 3 UX. **All real paid model integrations are OFF**. The independent timer continues to work even if microphone transcription or a model is unavailable.
+The Sprint 4 preview supports an optional AI section plan, rehearsal review, and brief live cues. Enter an overall target, then open **Suggest sections with AI** in Setup. Preview the result before applying it. Rehearsal feedback works with timing alone, and microphone transcription is opt-in.
 
-- Optional browser speech-to-text (English, Chinese, Spanish and French manually selected) with approximate local speaking-rate feedback.
-- User-controlled save of rehearsal history, optional separate transcript storage, and short history-based reminders during Present.
-- Private Qwen streaming ASR relay (Node WebSocket + PCM16 browser worklet), mock transport/tests, no real provider calls enabled.
-- Optional asynchronous DeepSeek Flash short-tip adapter, disabled by default; only a simulated response is used in non-billing integration tests.
-- History uses localStorage and a demo-profile label, not secure sign-in or cross-device backup. Do not enter private speech data.
+The preview uses Qwen 3.7 Flash through Vercel AI Gateway. Requests run server-side behind the preview access code. The timer, browser speech recognition, and local rehearsal history work independently.
 
-See [Sprint 4 Chinese setup and billing guide](docs/SPRINT4-AI-INTEGRATION.md) before creating any external account or enabling paid flags. Preview: https://si-526-team-3-git-feature-sprint-4-zshijie-9188s-projects.vercel.app.
-
-Checks: `npm install && npm run build`, `node --experimental-strip-types --test tests/*.test.mjs`, and `cd services/qwen-asr-relay && npm ci && npm test`. The GitHub Action also runs a 390px Chromium UI flow.
-
-**Do not merge this branch into Sprint 3 or main until the team signs off.**
+[Preview setup and configuration](docs/SPRINT4-AI-INTEGRATION.md)

@@ -17,11 +17,11 @@ export function LiveAnalysisControls(props: LiveAnalysisUIProps) {
   if (!props.configured) return null;
   return (
     <details className="live-ai-controls">
-      <summary>{props.mockMode ? "Preview simulated AI feedback" : "Optional live AI feedback (paid)"}</summary>
+      <summary>{props.mockMode ? "Preview simulated AI feedback" : "Optional live AI feedback"}</summary>
       <p>
         {props.mockMode ?
-          "This is a safe demo. It uses a fake server response, not real AI or paid tokens." :
-          "With permission, recent transcript text, optional outline, and timing data are sent to our secure server and DeepSeek. Charges may apply."}
+          "This mode shows simulated feedback." :
+          "With permission, recent transcript text, optional outline, and timing data are sent to the configured AI model."}
         {" "}The timer never waits for the response.
       </p>
       <label htmlFor="live-ai-code">Private pilot access code</label>
@@ -32,7 +32,7 @@ export function LiveAnalysisControls(props: LiveAnalysisUIProps) {
       <button type="button" disabled={!props.enabled && props.accessCode.length < 24}
         onClick={()=>props.setEnabled(!props.enabled)} className="live-ai-activate">
         {props.enabled ? "Stop live model feedback" :
-          props.mockMode ? "Enable simulated feedback" : "Enable live model feedback (may incur charges)"}
+          props.mockMode ? "Enable simulated feedback" : "Enable live AI feedback"}
       </button>
       {props.busy && <small>Checking the latest transcript without stopping the timer…</small>}
       {props.error && <p className="live-ai-error" role="alert">{props.error}</p>}

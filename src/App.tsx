@@ -9,6 +9,7 @@ import { buildHistoryHints, cueForSection } from "./ai/historyInsights";
 import { HistoryPanel, PresentHistoryHint, SaveRehearsalPanel } from "./ai/HistoryUI";
 import { LiveCueOverlay } from "./ai/LiveUI";
 import { useLiveFeedback } from "./ai/useLiveFeedback";
+import { SectionPlan } from "./ai/SectionPlan";
 
 type Section = {
   id: number;
@@ -569,6 +570,7 @@ export default function App() {
   const [activeSavedId, setActiveSavedId] = useState<string | null>(null);
   const [aiHistoryId, setAiHistoryId] = useState<string>(() => makeId());
   const [coachOutline, setCoachOutline] = useState("");
+  const [aiAccessCode, setAiAccessCode] = useState("");
   const [historyRuns, setHistoryRuns] = useState(() => readHistory(window.localStorage));
   const [saveHistoryTranscript, setSaveHistoryTranscript] = useState(false);
   const [savedHistoryRunId, setSavedHistoryRunId] = useState<string | null>(null);
@@ -636,11 +638,11 @@ export default function App() {
     [presentationHistory, sections, coachOutline],
   );
   const liveFeedback = useLiveFeedback({
-    running: isRunning, screen, segments: speechCoach.segments,
+    running: isRunning && !quietMode, screen, segments: speechCoach.segments,
     interim: speechCoach.interim, language: speechCoach.language,
-    sectionName: sections[activeIndex]?.name ?? "",
+    sectionId: sections[activeIndex]?.id ?? -1, sectionName: sections[activeIndex]?.name ?? "",
     sectionElapsed, target: sections[activeIndex]?.target ?? 0,
-    outline: coachOutline, historyHints,
+    outline: coachOutline, historyHints, accessCode: aiAccessCode, setAccessCode: setAiAccessCode,
   });
   const currentHistoryHint =
     screen === "present" && historyHintsEnabled && sectionElapsed < 9 &&
@@ -2092,6 +2094,18 @@ export default function App() {
               <label className="time-field__unit"><input aria-label="Overall target seconds" inputMode="numeric" placeholder="ss" value={targetSeconds} onChange={(e) => { const v=digitsOnly(e.target.value).slice(0,2); if(Number(v)>59) return; setTargetSeconds(v); setPresentationTarget(Number(targetMinutes || 0)*60+Number(v) || null); }}/><span>seconds</span></label>
             </div>
             <p className="field__hint">Section allocation: {formatTime(sectionsTarget)} · {remainingAllocation >= 0 ? `${formatTime(remainingAllocation)} still available` : `${formatTime(-remainingAllocation)} over your goal`}</p>
+            {import.meta.env.VITE_AI_PAID_REVIEW_ENABLED === "true" && presentationTarget !== null && editingId === null && (
+              <SectionPlan key={JSON.stringify([presentationTarget, title, sections])}
+                target={presentationTarget} title={title} sections={sections}
+                code={aiAccessCode} onCodeChange={setAiAccessCode} formatTime={formatTime}
+                onApply={(plan) => {
+                  setSections(plan.map((item) => {
+                    const existing = item.existingIndex === null ? undefined : sections[item.existingIndex];
+                    return existing ?? { id: nextId.current++, name: item.name, target: item.seconds };
+                  }));
+                  setFormError("");
+                }} />
+            )}
           </div>
           {presentationMode === "group" && (
             <div className="team-panel">
@@ -2612,9 +2626,9 @@ export default function App() {
           </button>
         </div>
 
-        <PresentHistoryHint hint={liveFeedback.cue ? null : currentHistoryHint}
+        <PresentHistoryHint hint={quietMode || liveFeedback.cue ? null : currentHistoryHint}
           onDismiss={() => setDismissedHintSection(activeIndex)} />
-        <LiveCueOverlay cue={liveFeedback.cue} onDismiss={liveFeedback.dismiss} />
+        <LiveCueOverlay cue={quietMode ? null : liveFeedback.cue} onDismiss={liveFeedback.dismiss} />
         {coachDock("Present")}
         <div className="present-actions" onClick={(event) => event.stopPropagation()}>
           <Button ariaLabel="Go back to setup" icon="edit" onClick={resetToSetup} variant="ghost">
@@ -2724,7 +2738,8 @@ export default function App() {
           </div>
 
           {speechCoach.segments.length > 0 && (
-            <CoachReport metrics={speechMetrics} transcript={speechCoach.transcript} outline={coachOutline} />
+            <CoachReport metrics={speechMetrics} transcript={speechCoach.transcript} outline={coachOutline}
+              accessCode={aiAccessCode} onAccessCodeChange={setAiAccessCode} />
           )}
           <button
             aria-expanded={showLiveBreakdown}
@@ -2959,9 +2974,8 @@ export default function App() {
           <small>{formatTime(totalTarget)} target{rehearsalIncomplete && " for the full presentation"}</small>
         </div>
 
-        {speechCoach.segments.length > 0 && (
-          <CoachReport metrics={speechMetrics} transcript={speechCoach.transcript} outline={coachOutline} />
-        )}
+        <CoachReport metrics={speechMetrics} transcript={speechCoach.transcript} outline={coachOutline}
+          accessCode={aiAccessCode} onAccessCodeChange={setAiAccessCode} />
         <SaveRehearsalPanel saved={savedHistoryRunId === currentRehearsalId}
           savingError={historySaveError} saveTranscript={saveHistoryTranscript}
           setSaveTranscript={setSaveHistoryTranscript} onSave={saveRehearsalHistory} />
