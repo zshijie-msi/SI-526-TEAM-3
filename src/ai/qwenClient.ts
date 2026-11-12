@@ -79,8 +79,12 @@ export function startRelayRecognition(opts: RelayOptions): () => void {
     if (message.type === "final") {
       if (message.text?.trim()) {
         const text = message.text.trim();
+        const detected = message.language === "zh" || message.language === "yue" ? "zh-CN"
+          : message.language === "en" ? "en-US"
+          : message.language === "fr" ? "fr-FR"
+          : message.language === "es" ? "es-ES" : "";
         const locale = opts.language === "auto"
-          ? ((text.match(/\p{Script=Han}/gu) ?? []).length >= 4 ? "zh-CN" : "en-US")
+          ? (detected || ((text.match(/\p{Script=Han}/gu) ?? []).length >= 4 ? "zh-CN" : "en-US"))
           : opts.language;
         opts.onFinal(text,locale);
       }
