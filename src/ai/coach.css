@@ -160,3 +160,24 @@
   font-size: 13px;
 }
 .speech-coach-language select:disabled { opacity: .65; cursor: not-allowed; }
+
+/* Sprint 4 retains the 430px centered Sprint 3 mobile app on wide screens. */
+.speech-coach-dock {
+  right: max(9px, calc((100vw - 430px) / 2 + 9px));
+  width: min(308px, calc(100vw - 18px));
+}
+.speech-coach-toggle { width: max-content; max-width: 100%; margin-left: auto; }
+.sprint4-ai-present-optin {
+  margin: 10px 0 20px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  color: #365369;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.sprint4-ai-present-optin input { margin-top: 3px; }
+@media (max-width: 620px) {
+  .speech-coach-dock { top: 75px; right: 8px; }
+  .speech-coach-toggle { box-shadow: 0 3px 9px #18293b22; }
+}
