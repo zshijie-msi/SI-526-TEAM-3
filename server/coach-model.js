@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import { getVercelOidcTokenSync } from "@vercel/oidc";
 
 /**
  * @typedef {{ method?: string, body?: unknown, headers?: Record<string, string | string[] | undefined> }} CoachRequest
@@ -45,7 +46,12 @@ export function readBody(body) {
 }
 
 function gatewayToken() {
-  return process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN;
+  if (process.env.AI_GATEWAY_API_KEY) return process.env.AI_GATEWAY_API_KEY;
+  try {
+    return getVercelOidcTokenSync();
+  } catch {
+    return undefined;
+  }
 }
 
 export function coachModelReady() {
