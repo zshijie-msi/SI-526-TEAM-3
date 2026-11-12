@@ -24,7 +24,7 @@ jobs:
       - name: Typecheck and production build
         run: npm run build
       - name: Typecheck API adapters
-        run: npx tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --types node --skipLibCheck --allowImportingTsExtensions api/*.ts
+        run: npx tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --types node --skipLibCheck --allowJs --checkJs api/*.ts
       - name: Test pacing, history and mock live feedback
         run: node --experimental-strip-types --test tests/*.test.mjs
       - name: Install private relay dependencies

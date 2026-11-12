@@ -1,7 +1,7 @@
 import {
   checkPilot, coachError, coachJson, coachModelReady, readBody,
   type CoachRequest, type CoachResponse,
-} from "../server/coach-model.ts";
+} from "../server/coach-model.js";
 
 export default async function handler(req: CoachRequest, res: CoachResponse) {
   if (!checkPilot(req, res, process.env.AI_FEEDBACK_ENABLED === "true" && coachModelReady())) return;

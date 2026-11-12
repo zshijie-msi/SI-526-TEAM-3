@@ -1,18 +1,16 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 
-export type CoachRequest = {
-  method?: string;
-  body?: unknown;
-  headers?: Record<string, string | string[] | undefined>;
-};
+/**
+ * @typedef {{ method?: string, body?: unknown, headers?: Record<string, string | string[] | undefined> }} CoachRequest
+ * @typedef {{ setHeader(name: string, value: string): void, status(code: number): CoachResponse, json(value: unknown): void }} CoachResponse
+ */
 
-export type CoachResponse = {
-  setHeader(name: string, value: string): void;
-  status(code: number): CoachResponse;
-  json(value: unknown): void;
-};
-
-export function checkPilot(req: CoachRequest, res: CoachResponse, enabled: boolean): boolean {
+/**
+ * @param {CoachRequest} req
+ * @param {CoachResponse} res
+ * @param {boolean} enabled
+ */
+export function checkPilot(req, res, enabled) {
   res.setHeader("Cache-Control", "no-store");
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
@@ -27,7 +25,8 @@ export function checkPilot(req: CoachRequest, res: CoachResponse, enabled: boole
   }
 
   const actual = req.headers?.["x-ai-demo-code"];
-  const hash = (value: string) => createHash("sha256").update(value).digest();
+  /** @param {string} value */
+  const hash = (value) => createHash("sha256").update(value).digest();
   if (typeof actual !== "string" || actual.length > 256 || !timingSafeEqual(hash(actual), hash(expected))) {
     res.status(403).json({ error: "Check the private preview access code." });
     return false;
@@ -35,7 +34,8 @@ export function checkPilot(req: CoachRequest, res: CoachResponse, enabled: boole
   return true;
 }
 
-export function readBody(body: unknown): Record<string, unknown> | null {
+/** @param {unknown} body @returns {Record<string, unknown> | null} */
+export function readBody(body) {
   try {
     const value = typeof body === "string" ? JSON.parse(body) : body;
     return value && typeof value === "object" && !Array.isArray(value) ? value : null;
@@ -53,23 +53,15 @@ export function coachModelReady() {
 }
 
 export class CoachModelError extends Error {
-  readonly providerStatus: number;
-
-  constructor(providerStatus: number) {
+  /** @param {number} providerStatus */
+  constructor(providerStatus) {
     super("AI provider unavailable.");
     this.providerStatus = providerStatus;
   }
 }
 
-export async function coachJson({
-  system, input, schema, maxTokens, timeout = 12_000,
-}: {
-  system: string;
-  input: unknown;
-  schema: Record<string, unknown>;
-  maxTokens: number;
-  timeout?: number;
-}): Promise<Record<string, unknown>> {
+/** @param {{system: string, input: unknown, schema: Record<string, unknown>, maxTokens: number, timeout?: number}} options */
+export async function coachJson({ system, input, schema, maxTokens, timeout = 12_000 }) {
   const dashscope = process.env.DASHSCOPE_API_KEY;
   const deepseek = process.env.DEEPSEEK_API_KEY;
   const token = dashscope || deepseek || gatewayToken();
@@ -105,9 +97,9 @@ export async function coachJson({
 
   if (!response.ok) {
     // Retain only non-sensitive diagnostic metadata in the platform logs.
-    let code: unknown;
+    let code;
     try {
-      const failure = await response.json() as { error?: { code?: unknown; type?: unknown } };
+      const failure = await response.json();
       code = failure.error?.code ?? failure.error?.type;
     } catch {
       // Some upstream failures have no JSON body.
@@ -116,13 +108,14 @@ export async function coachJson({
       typeof code === "string" && /^[a-z0-9_-]{1,64}$/i.test(code) ? code : "");
     throw new CoachModelError(response.status);
   }
-  const result = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+  const result = await response.json();
   const content = readBody(result.choices?.[0]?.message?.content);
   if (!content) throw new CoachModelError(502);
   return content;
 }
 
-export function coachError(res: CoachResponse, error: unknown) {
+/** @param {CoachResponse} res @param {unknown} error */
+export function coachError(res, error) {
   const providerStatus = error instanceof CoachModelError ? error.providerStatus : 502;
   if (providerStatus === 401 || providerStatus === 402 || providerStatus === 403) {
     return res.status(503).json({ error: "The model account needs activation or credits. The timer still works." });

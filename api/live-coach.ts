@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import {
   checkPilot, coachError, coachJson, coachModelReady, readBody,
   type CoachRequest, type CoachResponse,
-} from "../server/coach-model.ts";
+} from "../server/coach-model.js";
 
 type Cue = { cue: string; confidence: "low" | "medium" | "high"; evidence: string; source: "mock" | "model" };
 const recent = new Map<string, number>();

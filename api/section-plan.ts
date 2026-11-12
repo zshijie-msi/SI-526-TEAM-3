@@ -1,7 +1,7 @@
 import {
   checkPilot, coachError, coachJson, coachModelReady, readBody,
   type CoachRequest, type CoachResponse,
-} from "../server/coach-model.ts";
+} from "../server/coach-model.js";
 
 type ExistingSection = { name: string; seconds: number };
 type PlannedSection = ExistingSection & { purpose: string; existingIndex: number | null };
