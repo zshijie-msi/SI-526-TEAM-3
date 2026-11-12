@@ -4,8 +4,10 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { chromium } from "playwright";
 
 const origin="http://127.0.0.1:5173";
-const server=spawn("npm",["run","dev","--","--host","127.0.0.1"],{
-  stdio:"pipe",env:{...process.env,PORT:"5173"},
+// Start Vite directly instead of spawning npm (which would leave a child
+// process with open inherited pipes and hang the CI browser test indefinitely).
+const server=spawn(process.execPath,["node_modules/vite/bin/vite.js","--host","127.0.0.1","--port","5173"],{
+  stdio:"ignore",env:{...process.env,PORT:"5173"},
 });
 let browser;
 try{
