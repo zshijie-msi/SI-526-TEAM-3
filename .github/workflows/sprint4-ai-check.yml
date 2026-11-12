@@ -6,6 +6,11 @@ on:
       - feature/sprint-4
   pull_request:
 
+# Only the newest branch build needs full browser verification.
+concurrency:
+  group: sprint4-ai-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   typecheck-build-and-mock-tests:
     runs-on: ubuntu-latest
