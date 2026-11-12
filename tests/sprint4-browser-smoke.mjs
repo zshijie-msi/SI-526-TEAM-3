@@ -29,25 +29,32 @@ try{
     window.webkitSpeechRecognition=MockSpeechRecognition;
   });
   const page=await context.newPage();
+  page.setDefaultTimeout(8000);
+  console.log("E2E: Vite ready, Chromium launched");
   const errors=[];
   const modelCalls=[];
   page.on("pageerror",err=>errors.push(err.message));
   page.on("request",req=>{if(req.url().includes("/api/"))modelCalls.push(req.url())});
   await page.goto(origin);
+  console.log("E2E: home loaded");
   await page.getByRole("button",{name:/Individual/i}).first().click();
+  console.log("E2E: individual library");
   await page.getByRole("button",{name:/Start new presentation/i}).click();
   await page.getByPlaceholder("e.g. Final pitch").fill("Sprint 4 AI Smoke Test");
   await page.getByRole("button",{name:/Review presentation/i}).click();
+  console.log("E2E: Ready loaded");
   assert.ok((await page.locator(".history-panel").innerText()).includes("No rehearsal history saved"));
 
   await page.locator(".speech-coach-notes summary").click();
   await page.locator("#sprint4-ai-outline").fill("Intro: explain the main problem");
   const run=async(i)=>{
+    console.log("E2E: rehearsal "+i+" starting");
     await page.getByRole("button",{name:/Rehearse/i}).first().click();
     await page.getByRole("button",{name:/Speech Coach/i}).first().click();
     await page.getByRole("button",{name:/Enable microphone/i}).click();
     await sleep(900);
     await page.getByRole("button",{name:"Finish",exact:true}).click();
+    console.log("E2E: rehearsal "+i+" finished");
     assert.ok((await page.locator("body").innerText()).includes("Speaking pace"),"Missing speech coach report in rehearsal "+i);
     await page.getByRole("button",{name:/Save rehearsal to history/i}).click();
     const records=await page.evaluate(()=>JSON.parse(localStorage.getItem("tick-tock-ai-rehearsal-history-v1")||"[]"));
@@ -57,8 +64,10 @@ try{
     await page.getByRole("button",{name:/Review presentation/i}).click();
   };
   await run(1);await run(2);
+  console.log("E2E: two history saves completed");
   assert.ok((await page.locator(".history-panel").innerText()).includes("2 saved runs"));
   await page.getByRole("button",{name:/^Present/i}).first().click();
+  console.log("E2E: presentation setup opened");
   await page.getByRole("button",{name:"Start",exact:true}).click();
   await page.locator(".present-history-hint").waitFor({timeout:2000});
   assert.match(await page.locator(".present-history-hint").innerText(),/rehearsals/i);
@@ -67,6 +76,9 @@ try{
   assert.deepEqual(errors,[],"React/browser page errors");
   assert.deepEqual(modelCalls,[],"Unexpected paid API request");
   console.log("SPRINT4 BROWSER SMOKE PASSED: 2 real flow saves, Present history hint, 390px layout, zero API requests");
+}catch(err){
+  console.error("E2E FAILURE:",err);
+  throw err;
 }finally{
   await browser?.close();
   server.kill("SIGTERM");
