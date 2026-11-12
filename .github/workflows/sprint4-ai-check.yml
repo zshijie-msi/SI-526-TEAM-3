@@ -1,0 +1,30 @@
+name: Sprint 4 AI Coach checks
+
+on:
+  push:
+    branches:
+      - feature/sprint-4
+  pull_request:
+
+jobs:
+  typecheck-build-and-mock-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install app dependencies
+        run: npm install --no-audit --no-fund
+      - name: Typecheck and production build
+        run: npm run build
+      - name: Typecheck disabled API adapters
+        run: npx tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --types node --skipLibCheck api/live-coach.ts api/ai-feedback.ts
+      - name: Test pacing, history and mock live feedback
+        run: node --experimental-strip-types --test tests/*.test.mjs
+      - name: Install private relay dependencies
+        working-directory: services/qwen-asr-relay
+        run: npm ci --no-audit --no-fund
+      - name: Test mock Qwen relay (no external API)
+        working-directory: services/qwen-asr-relay
+        run: npm test
