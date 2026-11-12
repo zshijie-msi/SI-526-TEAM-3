@@ -599,6 +599,55 @@ export default function App() {
   const remainingAllocation = totalTarget - sectionsTarget;
   const speakerTotals = useMemo(() => getSpeakerTotals(sections, speakers), [sections, speakers]);
   const unassignedCount = speakerTotals.find((row) => row.unassigned)?.count ?? 0;
+  // These hooks remain mounted across Sprint 3 screens. Neither recognition nor an
+  // external model can pause the independent performance.now() clock.
+  const speechCoach = useSpeechCoach({
+    active: isRunning && (screen === "rehearse" || screen === "present"),
+    sectionId: sections[activeIndex]?.id ?? -1,
+    totalElapsed,
+  });
+  const speechTimedSections = useMemo(() => sections.map((section, index) => ({
+    ...section,
+    actual: actualTimes[index] ??
+      ((screen === "rehearse" || screen === "present") && index === activeIndex
+        ? sectionElapsed : 0),
+  })), [sections, actualTimes, screen, activeIndex, sectionElapsed]);
+  const speechMetrics = useMemo(
+    () => summarizeSpeech(speechCoach.segments, speechTimedSections, totalElapsed, speechCoach.language),
+    [speechCoach.segments, speechTimedSections, totalElapsed, speechCoach.language],
+  );
+  const currentSpeechWords = speechCoach.segments
+    .filter((segment) => segment.sectionId === sections[activeIndex]?.id)
+    .reduce((sum, segment) => sum + countSpeechUnits(segment.text, segment.language ?? speechCoach.language), 0);
+  const coachCue = livePaceCue({
+    target: sections[activeIndex]?.target ?? 0,
+    sectionElapsed,
+    sectionWords: currentSpeechWords,
+    language: speechCoach.language,
+  });
+  const effectiveHistoryId = activeSavedId ?? aiHistoryId;
+  const historyOwnerKey = historyOwner(account?.email);
+  const presentationHistory = useMemo(
+    () => historyForPresentation(historyRuns, historyOwnerKey, effectiveHistoryId),
+    [historyRuns, historyOwnerKey, effectiveHistoryId],
+  );
+  const historyHints = useMemo(
+    () => buildHistoryHints({ runs: presentationHistory, sections, outline: coachOutline }),
+    [presentationHistory, sections, coachOutline],
+  );
+  const liveFeedback = useLiveFeedback({
+    running: isRunning, screen, segments: speechCoach.segments,
+    interim: speechCoach.interim, language: speechCoach.language,
+    sectionName: sections[activeIndex]?.name ?? "",
+    sectionElapsed, target: sections[activeIndex]?.target ?? 0,
+    outline: coachOutline, historyHints,
+  });
+  const currentHistoryHint =
+    screen === "present" && historyHintsEnabled && sectionElapsed < 9 &&
+    dismissedHintSection !== activeIndex
+      ? cueForSection(historyHints, sections[activeIndex]?.id ?? -1)
+      : null;
+
   const currentSignature = setupSignature({
     title,
     presentationMode,
@@ -886,6 +935,12 @@ export default function App() {
   };
 
   const startRehearsal = () => {
+    speechCoach.reset();
+    liveFeedback.reset();
+    setCurrentRehearsalId(makeId());
+    setSavedHistoryRunId(null);
+    setSaveHistoryTranscript(false);
+    setHistorySaveError("");
     clock.current = { totalMs: 0, sectionMs: 0, since: performance.now() };
     lastHapticSection.current = null;
     setActiveIndex(0);
@@ -900,6 +955,9 @@ export default function App() {
   };
 
   const startPresentation = () => {
+    speechCoach.reset();
+    liveFeedback.reset();
+    setDismissedHintSection(null);
     clock.current = { totalMs: 0, sectionMs: 0, since: performance.now() };
     lastHapticSection.current = null;
     setActiveIndex(0);
@@ -959,6 +1017,7 @@ export default function App() {
   };
 
   const nextPresentationSection = () => {
+    setDismissedHintSection(null);
     const { sectionMs, totalMs } = snapshot();
     const nextActual = [...actualTimes];
     nextActual[activeIndex] = sectionMs / 1000;
@@ -1062,6 +1121,53 @@ export default function App() {
     saveFeedbackTimeout.current = window.setTimeout(() => setSaveConfirmation(""), 5000);
   };
 
+  const saveRehearsalHistory = () => {
+    if (speechCoach.provider === "qwen" && speechCoach.relayIsMock && speechCoach.segments.length > 0) {
+      setHistorySaveError("Simulated speech is not real and cannot be saved as a practice record.");
+      return;
+    }
+    // Incomplete rehearsals must not turn unvisited sections into false
+    // "finished early" findings.
+    const timedSections = speechTimedSections.filter((_, index) =>
+      !rehearsalIncomplete || index <= rehearsalEndIndex);
+    const metrics = summarizeSpeech(speechCoach.segments, timedSections, totalElapsed, speechCoach.language);
+    const run = createRehearsalRun({
+      id: currentRehearsalId,
+      presentationId: effectiveHistoryId,
+      owner: historyOwnerKey,
+      title: title.trim() || "Untitled presentation",
+      presentationMode,
+      timedSections,
+      segments: speechCoach.segments,
+      metrics,
+      duration: totalElapsed,
+      includeTranscript: saveHistoryTranscript,
+    });
+    const next = upsertHistory(historyRuns, run);
+    if (!writeHistory(window.localStorage, next)) {
+      setHistorySaveError("Browser storage is unavailable or full. The rehearsal was not saved.");
+      return;
+    }
+    setHistoryRuns(next);
+    setSavedHistoryRunId(run.id);
+    setHistorySaveError("");
+  };
+  const deleteHistoryRun = (id: string) => {
+    const next = historyRuns.filter((run) => run.id !== id);
+    if (writeHistory(window.localStorage, next)) {
+      setHistoryRuns(next);
+      if (savedHistoryRunId === id) setSavedHistoryRunId(null);
+    }
+  };
+  const clearPresentationHistory = () => {
+    const next = historyRuns.filter(
+      (run) => !(run.presentationId === effectiveHistoryId && run.owner === historyOwnerKey));
+    if (writeHistory(window.localStorage, next)) {
+      setHistoryRuns(next);
+      setSavedHistoryRunId(null);
+    }
+  };
+
   const savePresentation = (signedInAccount = account) => {
     const nextSections = commitOpenEditor();
     if (!nextSections) return;
@@ -1078,7 +1184,7 @@ export default function App() {
     const existing = savedPresentations.find(
       (presentation) => presentation.id === activeSavedId && presentation.ownerEmail === signedInAccount.email,
     );
-    const id = existing?.id ?? makeId();
+    const id = existing?.id ?? aiHistoryId;
     const saved = buildSavedPresentation(id, signedInAccount.email, nextSections);
     setSavedPresentations((current) => [
       saved,
@@ -1133,6 +1239,8 @@ export default function App() {
   };
 
   const startNewPresentation = (mode: PresentationMode) => {
+    setAiHistoryId(makeId());
+    setCoachOutline("");
     setPresentationMode(mode);
     setTitle("");
     // SCRUM-149: no placeholder speakers; the Intro section starts Unassigned.
@@ -1168,6 +1276,8 @@ export default function App() {
     presentation: SavedPresentation,
     destination: "setup" | "rehearse" | "present" = "setup",
   ) => {
+    setAiHistoryId(presentation.id);
+    setCoachOutline(presentation.coachOutline ?? "");
     setTitle(presentation.title);
     setPresentationMode(presentation.presentationMode);
     setSections(presentation.sections);
@@ -1235,6 +1345,8 @@ export default function App() {
     const saved = draft.savedPresentationId
       ? savedPresentations.find((item) => item.id === draft.savedPresentationId)
       : undefined;
+    setAiHistoryId(saved?.id ?? draft.aiHistoryId ?? makeId());
+    setCoachOutline(draft.coachOutline ?? saved?.coachOutline ?? "");
     setPresentationMode(draft.presentationMode);
     setTitle(draft.title);
     setSections(draft.sections);
