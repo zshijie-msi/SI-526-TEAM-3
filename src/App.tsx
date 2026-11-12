@@ -34,6 +34,7 @@ type SavedPresentation = {
   title: string;
   presentationMode: PresentationMode;
   sections: Section[];
+  presentationTarget?: number;
   speakers: string[];
   displayStyle: DisplayStyle;
   colorMode: ColorMode;
@@ -49,6 +50,7 @@ type AutosaveDraft = {
   savedPresentationId: string | null;
   title: string;
   sections: Section[];
+  presentationTarget?: number;
   speakers: string[];
   displayStyle: DisplayStyle;
   colorMode: ColorMode;
@@ -182,6 +184,7 @@ function setupSignature(setup: {
   title: string;
   presentationMode: PresentationMode;
   sections: Section[];
+  presentationTarget?: number;
   speakers: string[];
   displayStyle: DisplayStyle;
   colorMode: ColorMode;
@@ -192,6 +195,7 @@ function setupSignature(setup: {
     title: setup.title.trim(),
     presentationMode: setup.presentationMode,
     sections: setup.sections.map(({ id, name, target, speaker }) => ({ id, name, target, speaker: speaker || null })),
+    presentationTarget: setup.presentationTarget ?? null,
     speakers: setup.speakers,
     displayStyle: setup.displayStyle,
     colorMode: setup.colorMode,
@@ -211,6 +215,7 @@ function readSavedPresentations(): SavedPresentation[] {
         title: String(item.title ?? ""),
         presentationMode: item.presentationMode === "group" ? "group" : "individual",
         speakers: Array.isArray(item.speakers) ? item.speakers : [],
+        presentationTarget: Number(item.presentationTarget) > 0 ? Number(item.presentationTarget) : undefined,
         displayStyle: ["minimal", "standard", "detailed"].includes(item.displayStyle) ? item.displayStyle : "standard",
         colorMode: item.colorMode === "bright" ? "bright" : "muted",
         hapticsEnabled: Boolean(item.hapticsEnabled),
@@ -503,6 +508,12 @@ export default function App() {
   const [presentationMode, setPresentationMode] = useState<PresentationMode>("individual");
   const [title, setTitle] = useState("");
   const [sections, setSections] = useState<Section[]>(INITIAL_SECTIONS);
+  const [presentationTarget, setPresentationTarget] = useState<number | null>(null);
+  const [targetMinutes, setTargetMinutes] = useState("");
+  const [targetSeconds, setTargetSeconds] = useState("");
+  const [renamingSpeaker, setRenamingSpeaker] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [presentExitDestination, setPresentExitDestination] = useState<"home" | "setup" | null>(null);
   const [speakers, setSpeakers] = useState<string[]>([]);
   const [isAddingSpeaker, setIsAddingSpeaker] = useState(false);
   const [newSpeaker, setNewSpeaker] = useState("");
@@ -561,16 +572,16 @@ export default function App() {
   const clock = useRef({ totalMs: 0, sectionMs: 0, since: null as number | null });
   const lastHapticSection = useRef<number | null>(null);
 
-  const totalTarget = useMemo(
-    () => sections.reduce((total, section) => total + section.target, 0),
-    [sections],
-  );
+  const sectionsTarget = useMemo(() => sections.reduce((total, section) => total + section.target, 0), [sections]);
+  const totalTarget = presentationTarget ?? sectionsTarget;
+  const remainingAllocation = totalTarget - sectionsTarget;
   const speakerTotals = useMemo(() => getSpeakerTotals(sections, speakers), [sections, speakers]);
   const unassignedCount = speakerTotals.find((row) => row.unassigned)?.count ?? 0;
   const currentSignature = setupSignature({
     title,
     presentationMode,
     sections,
+    presentationTarget: presentationTarget ?? undefined,
     speakers,
     displayStyle,
     colorMode,
@@ -648,6 +659,7 @@ export default function App() {
       savedPresentationId: activeSavedId,
       title,
       sections,
+      presentationTarget: presentationTarget ?? undefined,
       speakers,
       displayStyle,
       colorMode,
@@ -671,6 +683,7 @@ export default function App() {
     activeSavedId,
     title,
     sections,
+    presentationTarget,
     speakers,
     displayStyle,
     colorMode,
@@ -957,6 +970,7 @@ export default function App() {
   };
 
   const resetToSetup = () => {
+    if (screen === "present") { setPresentExitDestination("setup"); return; }
     clock.current.since = null;
     setIsRunning(false);
     setConfirmingRehearsalSetup(false);
@@ -975,6 +989,7 @@ export default function App() {
   };
 
   const goHome = () => {
+    if (screen === "present") { setPresentExitDestination("home"); return; }
     stopEditing();
     setScreen("concepts");
     window.scrollTo(0, 0);
@@ -1005,6 +1020,7 @@ export default function App() {
     title: title.trim(),
     presentationMode,
     sections: savedSections,
+    presentationTarget: presentationTarget ?? undefined,
     speakers,
     displayStyle,
     colorMode,
@@ -1093,6 +1109,9 @@ export default function App() {
     setTitle("");
     // SCRUM-149: no placeholder speakers; the Intro section starts Unassigned.
     setSections([{ ...BLANK_INTRO }]);
+    setPresentationTarget(null);
+    setTargetMinutes("");
+    setTargetSeconds("");
     setSpeakers([]);
     setIsAddingSpeaker(false);
     setNewSpeaker("");
@@ -1124,6 +1143,9 @@ export default function App() {
     setTitle(presentation.title);
     setPresentationMode(presentation.presentationMode);
     setSections(presentation.sections);
+    setPresentationTarget(presentation.presentationTarget ?? null);
+    setTargetMinutes(presentation.presentationTarget ? String(Math.floor(presentation.presentationTarget / 60)) : "");
+    setTargetSeconds(presentation.presentationTarget ? String(presentation.presentationTarget % 60).padStart(2,"0") : "");
     setSpeakers(presentation.speakers);
     // Restore the display/color settings that were saved with this presentation.
     setDisplayStyle(presentation.displayStyle);
@@ -1188,6 +1210,9 @@ export default function App() {
     setPresentationMode(draft.presentationMode);
     setTitle(draft.title);
     setSections(draft.sections);
+    setPresentationTarget(draft.presentationTarget ?? null);
+    setTargetMinutes(draft.presentationTarget ? String(Math.floor(draft.presentationTarget / 60)) : "");
+    setTargetSeconds(draft.presentationTarget ? String(draft.presentationTarget % 60).padStart(2,"0") : "");
     setSpeakers(draft.speakers);
     setDisplayStyle(draft.displayStyle);
     setColorMode(draft.colorMode);
@@ -1330,6 +1355,18 @@ export default function App() {
     }
     setSpeakers((current) => [...current, name]);
     cancelAddSpeaker();
+  };
+
+  const saveSpeakerRename = () => {
+    if (!renamingSpeaker) return;
+    const name = renameValue.trim();
+    if (!name || speakers.some((speaker) => speaker !== renamingSpeaker && speaker.toLowerCase() === name.toLowerCase())) {
+      setSpeakerError("Enter a unique speaker name."); return;
+    }
+    setSpeakers((current) => current.map((speaker) => speaker === renamingSpeaker ? name : speaker));
+    setSections((current) => current.map((section) => section.speaker === renamingSpeaker ? { ...section, speaker: name } : section));
+    if (draftSpeaker === renamingSpeaker) setDraftSpeaker(name);
+    setRenamingSpeaker(null); setRenameValue(""); setSpeakerError("");
   };
 
   const removeSpeaker = (name: string) => {
@@ -1528,8 +1565,8 @@ export default function App() {
             <h1>{account ? "Your presentations" : "Start a presentation"}</h1>
             <p>
               {account
-                ? "Choose a mode to continue your draft, open a saved presentation, or start something new."
-                : "Rehearse and present without an account. Your work is autosaved on this device, one draft per mode."}
+                ? "Time your presentation sections, not your slides. Choose a mode to continue a draft, open a saved setup, or start something new."
+                : "Tick-Tock times presentation sections while you rehearse or present; it is not a slide editor. Work as a guest, with one autosaved draft per mode on this device."}
             </p>
           </div>
           {!account && (
@@ -1786,6 +1823,11 @@ export default function App() {
                 <span>seconds</span>
               </label>
             </div>
+            {editingId === 0 && presentationTarget !== null && remainingAllocation > 0 && (
+              <button type="button" className="text-button autofill-button" onClick={() => { setDraftMinutes(String(Math.floor(remainingAllocation / 60))); setDraftSeconds(String(remainingAllocation % 60).padStart(2,"0")); }}>
+                Use remaining {formatTime(remainingAllocation)}
+              </button>
+            )}
             <span className="field__hint" aria-live="polite">
               {previewTarget > 0 && previewSeconds <= 59
                 ? `Target: ${formatDuration(previewTarget)}`
@@ -1863,6 +1905,16 @@ export default function App() {
             />
           </label>
 
+          <div className="presentation-target-field">
+            <h2>Overall presentation target</h2>
+            <p className="field__hint">Optional. Set an independent goal for the whole presentation. Leave blank to use the sum of sections.</p>
+            <div className="time-field__inputs">
+              <label className="time-field__unit"><input aria-label="Overall target minutes" inputMode="numeric" placeholder="mm" value={targetMinutes} onChange={(e) => { const v=digitsOnly(e.target.value).slice(0,3); setTargetMinutes(v); const seconds=Number(targetSeconds || 0); setPresentationTarget(Number(v)*60+seconds || null); }}/><span>minutes</span></label>
+              <span className="time-field__colon">:</span>
+              <label className="time-field__unit"><input aria-label="Overall target seconds" inputMode="numeric" placeholder="ss" value={targetSeconds} onChange={(e) => { const v=digitsOnly(e.target.value).slice(0,2); if(Number(v)>59) return; setTargetSeconds(v); setPresentationTarget(Number(targetMinutes || 0)*60+Number(v) || null); }}/><span>seconds</span></label>
+            </div>
+            <p className="field__hint">Section allocation: {formatTime(sectionsTarget)} · {remainingAllocation >= 0 ? `${formatTime(remainingAllocation)} still available` : `${formatTime(-remainingAllocation)} over your goal`}</p>
+          </div>
           {presentationMode === "group" && (
             <div className="team-panel">
               <div className="team-panel__heading">
@@ -1888,6 +1940,7 @@ export default function App() {
                           </small>
                         </span>
                       </span>
+                      <button aria-label={`Rename ${row.label}`} className="speaker-row__remove" onClick={() => { setRenamingSpeaker(row.label); setRenameValue(row.label); setSpeakerError(""); }} type="button"><Icon name="edit" size={18}/></button>
                       <button
                         aria-label={`Remove ${row.label}`}
                         className="speaker-row__remove"
@@ -1899,6 +1952,16 @@ export default function App() {
                     </li>
                   ))}
                 </ul>
+              )}
+              {renamingSpeaker && (
+                <div className="add-speaker speaker-rename">
+                  <label className="field"><span className="field__label">Rename {renamingSpeaker}</span>
+                    <input autoFocus value={renameValue} onChange={(event) => setRenameValue(event.target.value)} onKeyDown={(event) => { if(event.key === "Enter") saveSpeakerRename(); if(event.key === "Escape") setRenamingSpeaker(null); }}/>
+                  </label>
+                  <Button onClick={saveSpeakerRename}>Save name</Button>
+                  <Button variant="secondary" onClick={() => setRenamingSpeaker(null)}>Cancel</Button>
+                  {speakerError && <p role="alert" className="form-error">{speakerError}</p>}
+                </div>
               )}
               {isAddingSpeaker ? (
                 <div className="add-speaker">
@@ -1941,8 +2004,8 @@ export default function App() {
           <div className="section-heading">
             <h2>Sections</h2>
             <div className="total-time">
-              <span>Total (min:sec)</span>
-              <strong>{formatTime(totalTarget)}</strong>
+              <span>Sections (min:sec)</span>
+              <strong>{formatTime(sectionsTarget)}</strong>
             </div>
           </div>
 
@@ -2339,7 +2402,7 @@ export default function App() {
               <span>Section {activeIndex + 1} of {sections.length}</span>
             )}
             {displayStyle === "detailed" && !quietMode && (
-              <span>Total {formatTime(totalElapsed)} / {formatTime(totalTarget)}</span>
+              <span>Presentation remaining: {totalElapsed > totalTarget ? `+${formatTime(totalElapsed - totalTarget)} over` : formatTime(totalTarget - totalElapsed)}</span>
             )}
           </div>
           <button
@@ -2379,13 +2442,14 @@ export default function App() {
             </span>
           )}
           <h1>{current.name}</h1>
+          {showTiming && <p className="present-remaining-total">Presentation remaining: {totalElapsed > totalTarget ? `+${formatTime(totalElapsed - totalTarget)} over` : formatTime(totalTarget - totalElapsed)}</p>}
           <div className="present-progress" aria-label={`${Math.round(progress)} percent of section target`}>
             <span style={{ width: `${progress}%` }} />
           </div>
           <div className={`present-exact-time ${exactTimeVisible || showTiming ? "present-exact-time--visible" : ""}`}>
             {isOver && !quietMode
-              ? `+${formatTime(sectionElapsed - current.target)}`
-              : `${formatTime(sectionElapsed)} / ${formatTime(current.target)}`}
+              ? `Section over by +${formatTime(sectionElapsed - current.target)}`
+              : `Section remaining: ${formatTime(current.target - sectionElapsed)}`}
           </div>
           {quietMode && !exactTimeVisible && (
             <span className="present-quiet-hint">Timing hidden · tap to peek</span>
@@ -2419,6 +2483,9 @@ export default function App() {
           )}
         </section>
 
+        {presentExitDestination && (
+          <ConfirmDialog title="Exit live presentation?" body="Your current live timing results are not saved. Keep presenting to preserve your running timer." cancelLabel="Keep presenting" confirmLabel="Exit presentation" danger onCancel={() => setPresentExitDestination(null)} onConfirm={() => { const destination=presentExitDestination; setPresentExitDestination(null); clock.current.since=null; setIsRunning(false); setAutosaveOn(false); setScreen(destination === "setup" ? "setup" : "concepts"); }}/>
+        )}
         {!isRunning && <div className="present-paused">Paused</div>}
 
         <button
@@ -2514,7 +2581,7 @@ export default function App() {
         <section className="timer-content">
           <div className="timer-position">
             <span>{isLast ? "Last section" : `Section ${activeIndex + 1} of ${sections.length}`}</span>
-            <span>Total {formatTime(totalElapsed)} / {formatTime(totalTarget)}</span>
+            <span>Presentation remaining: {totalElapsed > totalTarget ? `+${formatTime(totalElapsed - totalTarget)} over` : formatTime(totalTarget - totalElapsed)}</span>
           </div>
           <div className="total-progress"><span style={{ width: `${Math.min(100, (totalElapsed / totalTarget) * 100)}%` }} /></div>
           <div className="current-section rehearsal-section-transition" key={`section-heading-${current.id}`}>
@@ -2534,7 +2601,7 @@ export default function App() {
             style={{ "--progress": `${progress * 3.6}deg` } as React.CSSProperties}
           >
             <div className="timer-dial__inner">
-              <span>{isOver ? "Over by" : "Time remaining"}</span>
+              <span>{isOver ? "Section over by" : "Section remaining"}</span>
               <strong>{isOver ? "+" : ""}{formatTime(Math.abs(remaining))}</strong>
               <small>{isRunning ? "Timer running" : "Paused"}</small>
             </div>
