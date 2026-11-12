@@ -1545,6 +1545,34 @@ export default function App() {
     </div>
   );
 
+  const coachDock = (mode: "Rehearse" | "Present") => (
+    <CoachDock
+      mode={mode}
+      available={speechCoach.available}
+      enabled={speechCoach.enabled}
+      listening={speechCoach.listening}
+      error={speechCoach.error}
+      interim={speechCoach.interim}
+      transcript={speechCoach.transcript}
+      words={speechMetrics.words}
+      wpm={speechMetrics.wpm}
+      cue={coachCue}
+      language={speechCoach.language}
+      languageLocked={speechCoach.segments.length > 0}
+      onLanguageChange={speechCoach.setLanguage}
+      provider={speechCoach.provider}
+      onProviderChange={speechCoach.setProvider}
+      relayConfigured={speechCoach.relayConfigured}
+      relayIsMock={speechCoach.relayIsMock}
+      relayCode={speechCoach.relayCode}
+      onRelayCodeChange={speechCoach.setRelayCode}
+      unitLabel={speechMetrics.unitLabel}
+      rateLabel={speechMetrics.rateLabel}
+      onToggle={speechCoach.setEnabled}
+      live={liveFeedback}
+    />
+  );
+
   const savePanel = (
     <>
       <div className="presentation-save-panel">
@@ -2292,6 +2320,22 @@ export default function App() {
           </div>
           {presentationMode === "group" && renderSpeakerAllocation()}
           {savePanel}
+          <details className="speech-coach-notes">
+            <summary>Optional AI speaking outline</summary>
+            <p>Enter key points, optionally tagged by section, e.g. "Intro: explain the main problem".
+              The free prototype checks literal phrases, not semantic meaning.</p>
+            <label htmlFor="sprint4-ai-outline">Speaking outline (optional)</label>
+            <textarea id="sprint4-ai-outline" rows={4} maxLength={2000}
+              value={coachOutline} placeholder="Intro: explain the main problem"
+              onChange={(event) => setCoachOutline(event.target.value)} />
+          </details>
+          <HistoryPanel runs={presentationHistory} hints={historyHints}
+            onDelete={deleteHistoryRun} onClear={clearPresentationHistory} compact />
+          <label className="sprint4-ai-present-optin">
+            <input type="checkbox" checked={historyHintsEnabled}
+              onChange={(event) => setHistoryHintsEnabled(event.target.checked)} />
+            Show brief reminders from past rehearsals during Present
+          </label>
           <div className="launch-options">
             <h2>Choose how to begin</h2>
             <button className="launch-option launch-option--rehearse" onClick={startRehearsal} type="button">
@@ -2558,6 +2602,10 @@ export default function App() {
           </button>
         </div>
 
+        <PresentHistoryHint hint={liveFeedback.cue ? null : currentHistoryHint}
+          onDismiss={() => setDismissedHintSection(activeIndex)} />
+        <LiveCueOverlay cue={liveFeedback.cue} onDismiss={liveFeedback.dismiss} />
+        {coachDock("Present")}
         <div className="present-actions" onClick={(event) => event.stopPropagation()}>
           <Button ariaLabel="Go back to setup" icon="edit" onClick={resetToSetup} variant="ghost">
             Setup
@@ -2665,6 +2713,9 @@ export default function App() {
             <p>{summaryLine}</p>
           </div>
 
+          {speechCoach.segments.length > 0 && (
+            <CoachReport metrics={speechMetrics} transcript={speechCoach.transcript} outline={coachOutline} />
+          )}
           <button
             aria-expanded={showLiveBreakdown}
             className="breakdown-toggle"
@@ -2718,6 +2769,8 @@ export default function App() {
             Home
           </Button>
         </header>
+        <LiveCueOverlay cue={liveFeedback.cue} onDismiss={liveFeedback.dismiss} />
+        {coachDock("Rehearse")}
         <section className="timer-content">
           <div className="timer-position">
             <span>{isLast ? "Last section" : `Section ${activeIndex + 1} of ${sections.length}`}</span>
@@ -2896,6 +2949,14 @@ export default function App() {
           <small>{formatTime(totalTarget)} target{rehearsalIncomplete && " for the full presentation"}</small>
         </div>
 
+        {speechCoach.segments.length > 0 && (
+          <CoachReport metrics={speechMetrics} transcript={speechCoach.transcript} outline={coachOutline} />
+        )}
+        <SaveRehearsalPanel saved={savedHistoryRunId === currentRehearsalId}
+          savingError={historySaveError} saveTranscript={saveHistoryTranscript}
+          setSaveTranscript={setSaveHistoryTranscript} onSave={saveRehearsalHistory} />
+        <HistoryPanel runs={presentationHistory} hints={historyHints}
+          onDelete={deleteHistoryRun} onClear={clearPresentationHistory} compact />
         {presentationMode === "group" && (
           <section className="speaker-results">
             <div className="result-heading">
@@ -2975,7 +3036,7 @@ export default function App() {
         </div>
         <p className="results-not-saved">
           <Icon name="clock" size={16} />
-          These times show only on this screen. Save setup stores your presentation setup, not this run.
+          Save setup only stores your setup. Use "Save rehearsal to history" above to keep this run's timing statistics.
         </p>
         {savePanel}
       </section>
