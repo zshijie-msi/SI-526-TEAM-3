@@ -1,6 +1,14 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import tickTockIcon from "./assets/tick-tock-icon.png";
 import tickTockWordmark from "./assets/tick-tock-wordmark.png";
+import { CoachDock, CoachReport } from "./ai/CoachUI";
+import { countSpeechUnits, livePaceCue, summarizeSpeech } from "./ai/metrics";
+import { useSpeechCoach } from "./ai/useSpeechCoach";
+import { createRehearsalRun, historyForPresentation, historyOwner, readHistory, upsertHistory, writeHistory } from "./ai/history";
+import { buildHistoryHints, cueForSection } from "./ai/historyInsights";
+import { HistoryPanel, PresentHistoryHint, SaveRehearsalPanel } from "./ai/HistoryUI";
+import { LiveCueOverlay } from "./ai/LiveUI";
+import { useLiveFeedback } from "./ai/useLiveFeedback";
 
 type Section = {
   id: number;
@@ -41,6 +49,7 @@ type SavedPresentation = {
   hapticsEnabled: boolean;
   // Quiet Present view: hides times and ahead/behind status while presenting.
   quietMode?: boolean;
+  coachOutline?: string;
 };
 // Story 12 (SCRUM-133): one autosaved draft per mode, per profile (guest included).
 type AutosaveDraft = {
@@ -56,6 +65,8 @@ type AutosaveDraft = {
   colorMode: ColorMode;
   hapticsEnabled: boolean;
   quietMode?: boolean;
+  coachOutline?: string;
+  aiHistoryId?: string;
   editor: {
     editingId: number | null;
     name: string;
@@ -190,6 +201,7 @@ function setupSignature(setup: {
   colorMode: ColorMode;
   hapticsEnabled: boolean;
   quietMode?: boolean;
+  coachOutline?: string;
 }) {
   return JSON.stringify({
     title: setup.title.trim(),
@@ -201,6 +213,7 @@ function setupSignature(setup: {
     colorMode: setup.colorMode,
     hapticsEnabled: setup.hapticsEnabled,
     quietMode: Boolean(setup.quietMode),
+    coachOutline: (setup.coachOutline ?? "").trim(),
   });
 }
 
@@ -554,6 +567,15 @@ export default function App() {
   });
   const [savedPresentations, setSavedPresentations] = useState<SavedPresentation[]>(readSavedPresentations);
   const [activeSavedId, setActiveSavedId] = useState<string | null>(null);
+  const [aiHistoryId, setAiHistoryId] = useState<string>(() => makeId());
+  const [coachOutline, setCoachOutline] = useState("");
+  const [historyRuns, setHistoryRuns] = useState(() => readHistory(window.localStorage));
+  const [saveHistoryTranscript, setSaveHistoryTranscript] = useState(false);
+  const [savedHistoryRunId, setSavedHistoryRunId] = useState<string | null>(null);
+  const [historySaveError, setHistorySaveError] = useState("");
+  const [historyHintsEnabled, setHistoryHintsEnabled] = useState(true);
+  const [dismissedHintSection, setDismissedHintSection] = useState<number | null>(null);
+  const [currentRehearsalId, setCurrentRehearsalId] = useState<string>(() => makeId());
   const [savedSignature, setSavedSignature] = useState<string | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
   const [autosaves, setAutosaves] = useState<Record<string, AutosaveDraft>>(readAutosaves);
@@ -587,6 +609,7 @@ export default function App() {
     colorMode,
     hapticsEnabled,
     quietMode,
+    coachOutline,
   });
   const hasUnsavedChanges = activeSavedId !== null && currentSignature !== savedSignature;
   const activeSaved = savedPresentations.find((presentation) => presentation.id === activeSavedId);
@@ -665,6 +688,8 @@ export default function App() {
       colorMode,
       hapticsEnabled,
       quietMode,
+      coachOutline,
+      aiHistoryId,
       editor: {
         editingId,
         name: draftName,
@@ -689,6 +714,8 @@ export default function App() {
     colorMode,
     hapticsEnabled,
     quietMode,
+    coachOutline,
+    aiHistoryId,
     editingId,
     draftName,
     draftMinutes,
@@ -1026,6 +1053,7 @@ export default function App() {
     colorMode,
     hapticsEnabled,
     quietMode,
+    coachOutline: coachOutline.trim(),
   });
 
   const showSaveFeedback = (message: string) => {
