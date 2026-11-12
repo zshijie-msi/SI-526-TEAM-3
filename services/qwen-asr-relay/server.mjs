@@ -18,11 +18,12 @@ function safeEquals(a, b) {
 function parse(input) { try { return JSON.parse(input.toString()); } catch { return null; } }
 function send(ws, message) { if(ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message)); }
 function getUpstreamUrl() {
-  const endpoint=process.env.QWEN_WS_ENDPOINT ||
-    "wss://ap-southeast-1.maas.qwencloudapi.com/api-ws/v1/realtime";
+  const endpoint=process.env.QWEN_WS_ENDPOINT;
+  if(!endpoint)throw Error("QWEN_WS_ENDPOINT must be configured using your Model Studio Workspace ID");
   const url=new URL(endpoint);
-  if(url.protocol!=="wss:" ||
-     !(/(^|\.)maas\.qwencloudapi\.com$/.test(url.hostname) ||
+  const officialWorkspaceHost=/^[a-z0-9-]+\.(ap-southeast-1|cn-beijing)\.maas\.aliyuncs\.com$/i;
+  if(url.protocol!=="wss:" || url.port || url.pathname!=="/api-ws/v1/realtime" ||
+     !(officialWorkspaceHost.test(url.hostname) ||
        ["dashscope.aliyuncs.com","dashscope-intl.aliyuncs.com"].includes(url.hostname))) {
     throw Error("Unsupported Qwen WebSocket endpoint");
   }
@@ -98,11 +99,11 @@ export function startServer(options = {}) {
             const config={
               type:"session.update",event_id:"session_"+Date.now(),
               session:{
-                modalities:["text"],input_audio_format:"pcm",sample_rate:16000,
-                turn_detection:{type:"server_vad",threshold:0,silence_duration_ms:400},
+                input_audio_format:"pcm",sample_rate:16000,
+                turn_detection:{type:"server_vad",threshold:0.2,silence_duration_ms:600},
               },
             };
-            if(language!=="auto")config.session.input_audio_transcription={language:language==="zh"?"zh":language};
+            if(language!=="auto")config.session.input_audio_transcription={language};
             send(upstream,config);
           });
           upstream.on("message",(event)=>{
@@ -111,10 +112,11 @@ export function startServer(options = {}) {
               send(client,{type:"ready",provider:"qwen",language});return;
             }
             if(msg.type==="conversation.item.input_audio_transcription.text") {
-              send(client,{type:"partial",text:String(msg.text||"").slice(0,4000)});return;
+              send(client,{type:"partial",text:String((msg.text||"")+(msg.stash||"")).slice(0,4000),language:msg.language||language});return;
             }
             if(msg.type==="conversation.item.input_audio_transcription.completed") {
-              send(client,{type:"final",text:String(msg.transcript||"").slice(0,8000),language});return;
+              send(client,{type:"final",text:String(msg.transcript||"").slice(0,8000),
+                language:msg.language||language});return;
             }
             if(msg.type==="error")send(client,{type:"error",message:"ASR provider rejected a request."});
           });
