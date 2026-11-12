@@ -32,3 +32,8 @@
 .present-history-hint small{font-size:10px;color:#bad0d5}
 .present-history-hint button{flex:0 0 24px;border:0;background:transparent;color:#fff;font-size:22px;cursor:pointer}
 @media(max-width:600px){.history-panel,.history-save{padding:14px;margin:14px 0}.present-history-hint{bottom:64px}}
+
+.history-record-text,.history-saved-feedback li{font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+.history-record-text{white-space:pre-wrap;padding:0 10px}
+.history-saved-feedback h4{font-size:14px;margin:14px 0 4px}
+.history-saved-feedback .history-record-text{padding:0}

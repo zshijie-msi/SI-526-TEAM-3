@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { PreviewAccessField } from "./PreviewAccessField";
 
 type ExistingSection = { name: string; target: number };
 export type PlannedSection = { name: string; purpose: string; seconds: number; existingIndex: number | null };
@@ -58,9 +59,7 @@ export function SectionPlan({
     <details className="speech-coach-remote" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
       <summary>Suggest sections with AI</summary>
       <p>Uses the total time and any existing section names. A title is optional.</p>
-      <label htmlFor="plan-ai-code">Private preview access code</label>
-      <input id="plan-ai-code" type="password" autoComplete="off" value={code}
-        onChange={(event) => onCodeChange(event.target.value)} />
+      <PreviewAccessField id="plan-ai-code" code={code} onChange={onCodeChange} />
       <button type="button" onClick={() => { void generate(); }} disabled={loading || code.trim().length < 24}>
         {loading ? "Generating…" : "Generate section plan"}
       </button>

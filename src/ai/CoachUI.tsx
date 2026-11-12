@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { PreviewAccessField } from "./PreviewAccessField";
+import type { RehearsalFeedback } from "./history";
 import { LiveAnalysisControls, type LiveAnalysisUIProps } from "./LiveUI";
 import { localSuggestions, type SpeechMetrics } from "./metrics";
 import "./coach.css";
@@ -128,7 +130,7 @@ export function CoachDock({
           )}
           {enabled && cue && <p className="speech-coach-cue" role="status">{cue}</p>}
           {error && <p className="speech-coach-error" role="alert">{error}</p>}
-          <LiveAnalysisControls {...live} />
+          {mode === "Present" && <LiveAnalysisControls {...live} />}
           {enabled && (
             <div className="speech-coach-transcript">
               <strong>Live transcript</strong>
@@ -143,18 +145,21 @@ export function CoachDock({
 }
 
 export function CoachReport({
-  metrics, transcript, outline = "", accessCode, onAccessCodeChange,
+  metrics, transcript, outline = "", accessCode, onAccessCodeChange, feedback, onFeedback,
 }: {
   metrics: SpeechMetrics;
   transcript: string;
   outline?: string;
   accessCode: string;
   onAccessCodeChange(code: string): void;
+  feedback: RehearsalFeedback | undefined;
+  onFeedback(feedback: RehearsalFeedback): void;
 }) {
   const [showTranscript, setShowTranscript] = useState(false);
   const [remoteLoading, setRemoteLoading] = useState(false);
   const [remoteError, setRemoteError] = useState("");
-  const [remoteReview, setRemoteReview] = useState<{ summary: string; nextSteps: string[] } | null>(null);
+  const request = useRef<AbortController | null>(null);
+  useEffect(() => () => request.current?.abort(), []);
   const remoteVisible = import.meta.env.VITE_AI_PAID_REVIEW_ENABLED === "true";
   const timedSections = metrics.sections.filter((section) => section.actual > 0);
   const mostOver = timedSections.reduce<SpeechMetrics["sections"][number] | undefined>((worst, section) => {
@@ -166,12 +171,15 @@ export function CoachReport({
   const canRequestReview = hasTiming && accessCode.trim().length >= 24 && !remoteLoading;
 
   const requestRemoteReview = async () => {
-    if (!canRequestReview) return;
+    if (!canRequestReview || request.current) return;
+    const controller = new AbortController();
+    request.current = controller;
     setRemoteLoading(true);
     setRemoteError("");
     try {
       const response = await fetch("/api/ai-feedback", {
         method: "POST",
+        signal: controller.signal,
         headers: { "Content-Type": "application/json", "X-AI-Demo-Code": accessCode.trim() },
         body: JSON.stringify({
           transcript: transcript.slice(0, 8000),
@@ -185,11 +193,15 @@ export function CoachReport({
       };
       if (!response.ok) throw new Error(result.error || "Feedback request failed.");
       if (!result.summary) throw new Error("No usable feedback was returned.");
-      setRemoteReview({ summary: result.summary, nextSteps: result.nextSteps || [] });
+      if (controller.signal.aborted) return;
+      onFeedback({ summary: result.summary, nextSteps: result.nextSteps || [] });
     } catch (cause) {
-      setRemoteError(cause instanceof Error ? cause.message : "Feedback is unavailable.");
+      if (!controller.signal.aborted) {
+        setRemoteError(cause instanceof Error ? cause.message : "Feedback is unavailable.");
+      }
     } finally {
-      setRemoteLoading(false);
+      request.current = null;
+      if (!controller.signal.aborted) setRemoteLoading(false);
     }
   };
 
@@ -228,14 +240,11 @@ export function CoachReport({
       </>}
       {remoteVisible && (
         <div className="speech-coach-remote">
-          <h3>Optional remote AI review</h3>
+          <h3>AI rehearsal feedback</h3>
           <p>
             Sends section timing and any available transcript or outline to the AI model only when you request feedback.
           </p>
-          <label htmlFor="coach-demo-code">Private pilot access code</label>
-          <input id="coach-demo-code" type="password" value={accessCode}
-            autoComplete="off" onChange={(event) => onAccessCodeChange(event.target.value)}
-            placeholder="Provided by project owner" />
+          <PreviewAccessField id="coach-demo-code" code={accessCode} onChange={onAccessCodeChange} />
           <button type="button" onClick={() => { void requestRemoteReview(); }}
             disabled={!canRequestReview}>
             {remoteLoading ? "Generating..." : "Generate AI feedback"}
@@ -248,11 +257,11 @@ export function CoachReport({
                 : "Timing suggestion: Rehearse the transition into your next section."}</p>
             </div>
           )}
-          {remoteReview && (
+          {feedback && (
             <div className="speech-coach-remote-results">
-              <strong>Model feedback · Review before trusting</strong>
-              <p>{remoteReview.summary}</p>
-              <ul>{remoteReview.nextSteps.map((item, i) => <li key={i}>{item}</li>)}</ul>
+              <strong>Feedback and next steps</strong>
+              <p>{feedback.summary}</p>
+              <ul>{feedback.nextSteps.map((item, i) => <li key={i}>{item}</li>)}</ul>
             </div>
           )}
         </div>

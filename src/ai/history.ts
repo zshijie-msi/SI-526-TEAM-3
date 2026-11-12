@@ -19,6 +19,11 @@ export interface HistoricalSection {
   transcript?: string;
 }
 
+export interface RehearsalFeedback {
+  summary: string;
+  nextSteps: string[];
+}
+
 export interface RehearsalRun {
   id: string;
   presentationId: string;
@@ -29,6 +34,7 @@ export interface RehearsalRun {
   duration: number;
   language: string;
   transcriptSaved: boolean;
+  feedback?: RehearsalFeedback;
   sections: HistoricalSection[];
 }
 
@@ -49,6 +55,7 @@ export function createRehearsalRun(input: {
   metrics: SpeechMetrics;
   duration: number;
   includeTranscript: boolean;
+  feedback?: RehearsalFeedback;
   now?: number;
 }): RehearsalRun {
   return {
@@ -61,6 +68,7 @@ export function createRehearsalRun(input: {
     duration: finiteSeconds(input.duration),
     language: input.metrics.language,
     transcriptSaved: input.includeTranscript,
+    ...(input.feedback ? { feedback: input.feedback } : {}),
     sections: input.timedSections.slice(0, 50).map((section) => {
       const metrics = input.metrics.sections.find((entry) => entry.id === section.id);
       const words = input.segments

@@ -1,3 +1,4 @@
+import { PreviewAccessField } from "./PreviewAccessField";
 import type { LiveCue } from "./useLiveFeedback";
 import "./live.css";
 
@@ -21,15 +22,12 @@ export function LiveAnalysisControls(props: LiveAnalysisUIProps) {
       <p>
         {props.mockMode ?
           "This mode shows simulated feedback." :
-          "With permission, recent transcript text, optional outline, and timing data are sent to the configured AI model."}
+          "Sends recent transcript text, timing, and any available outline and rehearsal patterns to the AI model."}
         {" "}The timer never waits for the response.
       </p>
-      <label htmlFor="live-ai-code">Private pilot access code</label>
-      <input id="live-ai-code" type="password" autoComplete="off"
-        placeholder="24+ characters supplied by project owner"
-        value={props.accessCode} disabled={props.enabled}
-        onChange={(event)=>props.setAccessCode(event.target.value)} />
-      <button type="button" disabled={!props.enabled && props.accessCode.length < 24}
+      <PreviewAccessField id="live-ai-code" code={props.accessCode}
+        onChange={props.setAccessCode} disabled={props.enabled} />
+      <button type="button" disabled={!props.enabled && props.accessCode.trim().length < 24}
         onClick={()=>props.setEnabled(!props.enabled)} className="live-ai-activate">
         {props.enabled ? "Stop live model feedback" :
           props.mockMode ? "Enable simulated feedback" : "Enable live AI feedback"}

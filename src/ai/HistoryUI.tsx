@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { RehearsalRun } from "./history";
+import { isChineseLanguage } from "./metrics";
 import { historyStats, type SectionHint } from "./historyInsights";
 import "./history.css";
 
@@ -12,24 +13,28 @@ function date(ts: number): string {
 }
 
 export function SaveRehearsalPanel({
-  saved, savingError, saveTranscript, setSaveTranscript, onSave,
+  saved, savingError, saveTranscript, setSaveTranscript, hasFeedback, hasUnsavedFeedback, onSave,
 }: {
   saved: boolean;
   savingError: string;
   saveTranscript: boolean;
   setSaveTranscript: (value: boolean) => void;
+  hasFeedback: boolean;
+  hasUnsavedFeedback: boolean;
   onSave: () => void;
 }) {
   return (
     <section className="history-save" aria-label="Save rehearsal history">
       <h2>Remember this rehearsal</h2>
-      <p>Save section times and speaking pace on this device. Future Present reminders can use repeated patterns from saved runs.</p>
+      <p>Save section times and speaking pace on this device.{hasFeedback && " The current AI feedback will be saved with this run."}</p>
       <label className="history-checkbox">
         <input type="checkbox" checked={saveTranscript} onChange={(e) => setSaveTranscript(e.target.checked)} />
         <span>Also save my transcript for optional outline checks (local only)</span>
       </label>
       <button type="button" onClick={onSave} className="history-primary">{saved ? "Update saved rehearsal" : "Save rehearsal to history"}</button>
-      {saved && <p role="status" className="history-good">Saved on this browser. You can delete it in the history list.</p>}
+      {saved && <p role="status" className="history-good">{hasUnsavedFeedback
+        ? "Update saved rehearsal to keep the latest AI feedback."
+        : "Saved on this browser. You can delete it in the history list."}</p>}
       {savingError && <p role="alert" className="history-warning">{savingError}</p>}
       <small>This is a local-only record, not a secure cloud account. No audio is stored. Clearing browser storage deletes these records.</small>
     </section>
@@ -88,15 +93,35 @@ export function HistoryPanel({
               {runs.slice(0, 10).map((run) => (
                 <details key={run.id}>
                   <summary><span>{date(run.recordedAt)} · {time(run.duration)}</span>
-                    <small>{run.language}{run.transcriptSaved ? " · transcript saved" : " · timing only"}</small>
+                    <small>{run.language}{run.transcriptSaved ? " · transcript saved" : ""}</small>
                   </summary>
                   <div className="history-run-body">
                     {run.sections.map((section) => (
-                      <div key={section.id} className="history-section-row">
-                        <span>{section.name}{section.speaker ? " · " + section.speaker : ""}</span>
-                        <span>{time(section.actual)} / {time(section.target)}</span>
+                      <div key={section.id}>
+                        <div className="history-section-row">
+                          <span>{section.name}{section.speaker ? " · " + section.speaker : ""}</span>
+                          <span>{time(section.actual)} / {time(section.target)}</span>
+                        </div>
+                        {section.rate != null && (
+                          <small>{section.rate} {isChineseLanguage(run.language) ? "units/min" : "words/min"} (estimated)</small>
+                        )}
+                        {run.transcriptSaved && section.transcript && (
+                          <details>
+                            <summary>Transcript</summary>
+                            <p className="history-record-text">{section.transcript}</p>
+                          </details>
+                        )}
                       </div>
                     ))}
+                    {run.feedback?.summary && (
+                      <div className="history-saved-feedback">
+                        <h4>AI feedback</h4>
+                        <p className="history-record-text">{run.feedback.summary}</p>
+                        {Array.isArray(run.feedback.nextSteps) && (
+                          <ul>{run.feedback.nextSteps.map((step, index) => <li key={index}>{step}</li>)}</ul>
+                        )}
+                      </div>
+                    )}
                     <button type="button" className="history-delete" onClick={() => {
                       if (window.confirm("Delete this rehearsal from this device?")) onDelete(run.id);
                     }}>Delete this rehearsal</button>

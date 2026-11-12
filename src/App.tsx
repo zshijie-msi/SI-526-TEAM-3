@@ -4,7 +4,7 @@ import tickTockWordmark from "./assets/tick-tock-wordmark.png";
 import { CoachDock, CoachReport } from "./ai/CoachUI";
 import { countSpeechUnits, livePaceCue, summarizeSpeech } from "./ai/metrics";
 import { useSpeechCoach } from "./ai/useSpeechCoach";
-import { createRehearsalRun, historyForPresentation, historyOwner, readHistory, upsertHistory, writeHistory } from "./ai/history";
+import { createRehearsalRun, historyForPresentation, historyOwner, readHistory, upsertHistory, writeHistory, type RehearsalFeedback } from "./ai/history";
 import { buildHistoryHints, cueForSection } from "./ai/historyInsights";
 import { HistoryPanel, PresentHistoryHint, SaveRehearsalPanel } from "./ai/HistoryUI";
 import { LiveCueOverlay } from "./ai/LiveUI";
@@ -573,6 +573,7 @@ export default function App() {
   const [aiAccessCode, setAiAccessCode] = useState("");
   const [historyRuns, setHistoryRuns] = useState(() => readHistory(window.localStorage));
   const [saveHistoryTranscript, setSaveHistoryTranscript] = useState(false);
+  const [rehearsalFeedback, setRehearsalFeedback] = useState<RehearsalFeedback>();
   const [savedHistoryRunId, setSavedHistoryRunId] = useState<string | null>(null);
   const [historySaveError, setHistorySaveError] = useState("");
   const [historyHintsEnabled, setHistoryHintsEnabled] = useState(true);
@@ -940,6 +941,7 @@ export default function App() {
     speechCoach.reset();
     liveFeedback.reset();
     setCurrentRehearsalId(makeId());
+    setRehearsalFeedback(undefined);
     setSavedHistoryRunId(null);
     setSaveHistoryTranscript(false);
     setHistorySaveError("");
@@ -959,6 +961,7 @@ export default function App() {
   const startPresentation = () => {
     speechCoach.reset();
     liveFeedback.reset();
+    setRehearsalFeedback(undefined);
     setDismissedHintSection(null);
     clock.current = { totalMs: 0, sectionMs: 0, since: performance.now() };
     lastHapticSection.current = null;
@@ -1144,6 +1147,7 @@ export default function App() {
       metrics,
       duration: totalElapsed,
       includeTranscript: saveHistoryTranscript,
+      feedback: rehearsalFeedback,
     });
     const next = upsertHistory(historyRuns, run);
     if (!writeHistory(window.localStorage, next)) {
@@ -2347,7 +2351,7 @@ export default function App() {
           <details className="speech-coach-notes">
             <summary>Optional AI speaking outline</summary>
             <p>Enter key points, optionally tagged by section, e.g. "Intro: explain the main problem".
-              The free prototype checks literal phrases, not semantic meaning.</p>
+              Saved-run outline checks compare exact phrases. AI feedback can consider your outline when you request it.</p>
             <label htmlFor="sprint4-ai-outline">Speaking outline (optional)</label>
             <textarea id="sprint4-ai-outline" rows={4} maxLength={2000}
               value={coachOutline} placeholder="Intro: explain the main problem"
@@ -2739,7 +2743,8 @@ export default function App() {
 
           {speechCoach.segments.length > 0 && (
             <CoachReport metrics={speechMetrics} transcript={speechCoach.transcript} outline={coachOutline}
-              accessCode={aiAccessCode} onAccessCodeChange={setAiAccessCode} />
+              accessCode={aiAccessCode} onAccessCodeChange={setAiAccessCode}
+              feedback={rehearsalFeedback} onFeedback={setRehearsalFeedback} />
           )}
           <button
             aria-expanded={showLiveBreakdown}
@@ -2974,11 +2979,15 @@ export default function App() {
           <small>{formatTime(totalTarget)} target{rehearsalIncomplete && " for the full presentation"}</small>
         </div>
 
-        <CoachReport metrics={speechMetrics} transcript={speechCoach.transcript} outline={coachOutline}
-          accessCode={aiAccessCode} onAccessCodeChange={setAiAccessCode} />
+        <CoachReport key={currentRehearsalId} metrics={speechMetrics} transcript={speechCoach.transcript} outline={coachOutline}
+          accessCode={aiAccessCode} onAccessCodeChange={setAiAccessCode}
+          feedback={rehearsalFeedback} onFeedback={setRehearsalFeedback} />
         <SaveRehearsalPanel saved={savedHistoryRunId === currentRehearsalId}
           savingError={historySaveError} saveTranscript={saveHistoryTranscript}
-          setSaveTranscript={setSaveHistoryTranscript} onSave={saveRehearsalHistory} />
+          setSaveTranscript={setSaveHistoryTranscript} onSave={saveRehearsalHistory}
+          hasFeedback={Boolean(rehearsalFeedback)}
+          hasUnsavedFeedback={Boolean(rehearsalFeedback &&
+            presentationHistory.find((run) => run.id === currentRehearsalId)?.feedback !== rehearsalFeedback)} />
         <HistoryPanel runs={presentationHistory} hints={historyHints}
           onDelete={deleteHistoryRun} onClear={clearPresentationHistory} compact />
         {presentationMode === "group" && (
@@ -3060,7 +3069,7 @@ export default function App() {
         </div>
         <p className="results-not-saved">
           <Icon name="clock" size={16} />
-          Save setup only stores your setup. Use "Save rehearsal to history" above to keep this run's timing statistics.
+          Save setup only stores your setup. Use "Save rehearsal to history" above to keep this run's timing and any AI feedback.
         </p>
         {savePanel}
       </section>
