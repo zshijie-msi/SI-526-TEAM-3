@@ -83,6 +83,10 @@ export function useLiveFeedback({
           source?: string; error?: string;
         };
         if (!response.ok) throw Error(body.error || "Live analysis unavailable");
+        // Discard feedback produced for a chapter that has already ended.
+        // A late response must never interrupt a different speaker in Present.
+        if (controller.signal.aborted || latest.current.sectionName !== input.sectionName ||
+            latest.current.screen !== input.screen || !latest.current.running) return;
         if (body.cue?.trim() && body.confidence !== "low") {
           const next:LiveCue = {
             text:body.cue.slice(0,110),
