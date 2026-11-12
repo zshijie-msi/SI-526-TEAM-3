@@ -1209,6 +1209,16 @@ export default function App() {
       return;
     }
     const nextAccount = { name, email };
+    // Transfer this presentation's explicitly saved guest rehearsal data when
+    // the user adopts a local demo profile on the same browser.
+    if (!account) {
+      const moved = historyRuns.map((run) =>
+        run.owner === "guest:local-device" && run.presentationId === effectiveHistoryId
+          ? { ...run, owner: email }
+          : run);
+      if (moved.some((run, index) => run.owner !== historyRuns[index].owner) &&
+          writeHistory(window.localStorage, moved)) setHistoryRuns(moved);
+    }
     if (autosaveOn && !account) {
       // The guest draft being worked on moves into this profile's slot.
       setAutosaves((current) => {
