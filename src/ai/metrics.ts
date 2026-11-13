@@ -113,18 +113,18 @@ export function livePaceCue(args: {
   const zh = isChineseLanguage(language);
   if (target > 0) {
     const remaining = target - sectionElapsed;
-    if (remaining <= 0) return zh ? "这一节已超时，可以准备切换章节。" : "Over section target — move when ready.";
-    if (remaining <= 10) return zh ? "这一节还剩约 10 秒，可以准备收尾。" : "Wrap up this section soon.";
+    if (remaining <= 0) return zh ? "本节已超时。" : "Over section target.";
+    if (remaining <= 10) return zh ? "准备收尾。" : "Wrap up this section soon.";
   }
   // Only the English threshold was informally selected for this prototype.
   // Don't apply it to Chinese characters, French or Spanish speech.
   if (language !== "en-US") return null;
   const wpm = wordsPerMinute(sectionWords, sectionElapsed);
   if (wpm !== null && sectionElapsed >= 15 && sectionWords >= 15 && wpm > 190) {
-    return "You're speaking quickly. Try a slower pace.";
+    return "Try a slower pace.";
   }
   if (wpm !== null && sectionElapsed >= 25 && sectionWords >= 15 && wpm < 95) {
-    return "Your pace is quite slow. Adjust if you need to.";
+    return "Try a quicker pace.";
   }
   return null;
 }
@@ -133,12 +133,12 @@ export function livePaceCue(args: {
 export function localSuggestions(metrics: SpeechMetrics): string[] {
   const chinese = isChineseLanguage(metrics.language);
   if (metrics.words === 0) return [chinese
-    ? "没有识别到语音，请检查麦克风权限；计时结果仍可使用。"
-    : "No speech was captured. Check microphone permission or use the timer results."];
+    ? "未识别到语音。"
+    : "No speech detected."];
   const ideas: string[] = [];
   if (metrics.language === "en-US") {
-    if (metrics.wpm !== null && metrics.wpm > 175) ideas.push("You spoke quickly overall. Try a slightly slower run.");
-    if (metrics.wpm !== null && metrics.wpm < 105) ideas.push("Your speaking pace was fairly slow. Check whether you want more energy.");
+    if (metrics.wpm !== null && metrics.wpm > 175) ideas.push("Try a slower pace.");
+    if (metrics.wpm !== null && metrics.wpm < 105) ideas.push("Try a quicker pace.");
   }
   const farthest = [...metrics.sections].filter((s) => s.target > 0).sort((a, b) =>
     Math.abs(b.actual - b.target) - Math.abs(a.actual - a.target),
@@ -155,7 +155,7 @@ export function localSuggestions(metrics: SpeechMetrics): string[] {
     }
   }
   if (!ideas.length) ideas.push(chinese
-    ? "目前没有明显的章节时间偏差，可以再练习一次。"
-    : "Your measured timing and speaking pace look fairly consistent. Try another rehearsal.");
+    ? "节奏稳定。"
+    : "Steady pacing.");
   return ideas;
 }

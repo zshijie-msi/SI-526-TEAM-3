@@ -38,7 +38,7 @@ export default async function handler(req: CoachRequest, res: CoachResponse) {
   try {
     const result = await coachJson({
       system: "You are a concise presentation planner. Return JSON with a sections array. " +
-        "Every entry must have a short name, a one-sentence purpose, and positive whole seconds. " +
+        "Every entry must have a short name, a purpose of up to eight words, and positive whole seconds. " +
         "Propose only NEW sections for the supplied secondsToAllocate. When secondsToAllocate is zero, " +
         "instead return an empty sections array. Durations must add to exactly secondsToAllocate. " +
         "When retainExisting is true, don't duplicate existing sections. Use up to five new sections. " +

@@ -2,13 +2,12 @@
 .speech-coach-source label,.live-ai-controls label{font-size:12px;display:block;font-weight:600;margin:5px 0}
 .speech-coach-source select,.speech-coach-source input,.live-ai-controls input{box-sizing:border-box;padding:9px;width:100%;border:1px solid #bfd1d4;border-radius:7px;background:white;font-size:12px;color:#172536}
 .live-ai-controls summary{font-size:12px;font-weight:700;cursor:pointer}
-.live-ai-controls p,.live-ai-controls small{font-size:11px;line-height:1.45;color:#536879;margin:9px 0}
+.live-ai-controls p{font-size:11px;line-height:1.45;color:#536879;margin:9px 0}
 .live-ai-activate{width:100%;border-radius:8px;border:1px solid #7faeaa;color:#174f56;background:#e4f2f0;padding:9px;cursor:pointer;font-size:12px;margin-top:8px}
 .live-ai-activate:disabled{opacity:.5;cursor:not-allowed}
 .live-ai-controls .live-ai-error{color:#a24927}
-.live-ai-controls .live-ai-last{color:#175b5e}
 .live-ai-overlay{position:fixed;z-index:75;left:50%;bottom:80px;transform:translateX(-50%);width:min(420px,calc(100vw - 24px));display:flex;justify-content:space-between;gap:12px;background:#163e45;border:1px solid #6aaba9;color:#fff;border-radius:12px;padding:13px;box-shadow:0 10px 24px #112f4155}
-.live-ai-overlay small{font-size:10px;letter-spacing:.06em;color:#b9eee7}
+.live-ai-overlay strong{font-size:12px;color:#b9eee7}
 .live-ai-overlay p{margin:7px 0 2px;font-size:13px;color:#fff;line-height:1.5}
 .live-ai-overlay button{border:0;background:none;color:#fff;cursor:pointer;font-size:22px;align-self:start}
 @media(max-width:600px){.live-ai-overlay{bottom:66px}}

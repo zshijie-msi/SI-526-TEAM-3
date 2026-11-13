@@ -55,24 +55,23 @@ export function buildHistoryHints(args: {
     if (over >= 2 && over / samples.length >= 0.6) {
       result.push({
         sectionId: section.id, sectionName: section.name, kind: "over-time",
-        text: "This section often runs over. Start wrapping up a little earlier.",
-        evidence: over + " of " + samples.length + " recent rehearsals were over target (median " +
-          (avgDelta > 0 ? "+" : "") + avgDelta + "s).",
+        text: "Wrap up this section sooner.",
+        evidence: `${over} of ${samples.length} runs over target · median +${avgDelta}s`,
         sampleSize: samples.length,
       });
     } else if (under >= 2 && under / samples.length >= 0.6) {
       result.push({
         sectionId: section.id, sectionName: section.name, kind: "under-time",
-        text: "You usually finish this section early. Check if the important details are included.",
-        evidence: under + " of " + samples.length + " recent rehearsals finished early (median " + avgDelta + "s).",
+        text: "Time to add a key detail.",
+        evidence: `${under} of ${samples.length} runs under target · median ${avgDelta}s`,
         sampleSize: samples.length,
       });
     } else if (samples.length >= 3) {
       const range = Math.max(...samples.map((s) => s.actual)) - Math.min(...samples.map((s) => s.actual));
       if (range >= 25) result.push({
         sectionId: section.id, sectionName: section.name, kind: "variable",
-        text: "This section's timing has varied. Keep an eye on its progress.",
-        evidence: "Across " + samples.length + " rehearsals, this section varied by " + Math.round(range) + " seconds.",
+        text: "Check the time on this section.",
+        evidence: `Timing varied by ${Math.round(range)}s across ${samples.length} runs`,
         sampleSize: samples.length,
       });
     }
@@ -85,8 +84,7 @@ export function buildHistoryHints(args: {
       if (missing >= 2 && missing / transcriptSamples.length >= 0.6) result.push({
         sectionId: section.id, sectionName: section.name, kind: "outline",
         text: "Check outline point: " + point.slice(0, 85),
-        evidence: "Exact phrase not found in " + missing + " of " + transcriptSamples.length +
-          " saved transcripts; synonyms are not detected.",
+        evidence: `Exact phrase missing in ${missing} of ${transcriptSamples.length} transcripts`,
         sampleSize: transcriptSamples.length,
       });
     }

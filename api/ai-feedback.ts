@@ -33,7 +33,8 @@ export default async function handler(req: CoachRequest, res: CoachResponse) {
   try {
     const parsed = await coachJson({
       system: 'You are a concise presentation rehearsal coach. Reply with a JSON object containing "summary" ' +
-        '(one sentence) and "nextSteps" (an array of one to three concrete, prioritized suggestions). ' +
+        '(one sentence, up to 16 words) and "nextSteps" (one to three concrete, prioritized actions, ' +
+        'up to 12 words each). Use plain language and avoid repeating the summary. ' +
         "Only use the supplied timing, transcript and outline as evidence. When there is no transcript, " +
         "give timing-only feedback. Do not infer delivery qualities or missed content from timing. " +
         "Name the section and quantify the timing difference when useful. If both transcript and outline are " +

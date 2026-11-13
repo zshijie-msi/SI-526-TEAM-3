@@ -54,16 +54,11 @@ export function CoachDock({
 
       {expanded && (
         <div className="speech-coach-panel">
-          <h2>Practice pace</h2>
-          <p className="speech-coach-explainer">
-            Optional live transcription and approximate speaking-rate feedback.
-            The {mode.toLowerCase()} timer works without a microphone.
-          </p>
           <label className="speech-coach-language">
             <span>Speech language</span>
             <select value={language} disabled={enabled || languageLocked}
               onChange={(event) => onLanguageChange(event.target.value)}>
-              {provider === "qwen" && <option value="auto">Auto-detect (Qwen relay)</option>}
+              {provider === "qwen" && <option value="auto">Auto-detect</option>}
               <option value="en-US">English</option>
               <option value="zh-CN">中文（普通话，简体）</option>
               <option value="zh-TW">中文（繁體）</option>
@@ -71,9 +66,6 @@ export function CoachDock({
               <option value="fr-FR">Français</option>
             </select>
           </label>
-          {languageLocked && <p className="speech-coach-privacy">
-            Language is locked after speech is captured. Start a new run to change it.
-          </p>}
           {relayConfigured && (
             <div className="speech-coach-source">
               <label htmlFor="speech-engine">Speech recognition</label>
@@ -83,27 +75,22 @@ export function CoachDock({
                   if (next === "browser" && language === "auto") onLanguageChange("en-US");
                   onProviderChange(next);
                 }}>
-                <option value="browser">Browser recognition (free fallback)</option>
-                <option value="qwen">{relayIsMock ? "Qwen relay simulation (no charge)" :
-                  "Qwen real-time ASR (requires approved billing)"}</option>
+                <option value="browser">Browser transcription</option>
+                <option value="qwen">{relayIsMock ? "Simulated transcription" : "Qwen audio streaming"}</option>
               </select>
               {provider === "qwen" && (
                 <>
                   <label htmlFor="speech-relay-code">Private pilot access code</label>
                   <input id="speech-relay-code" autoComplete="off" type="password"
                     value={relayCode} onChange={(e) => onRelayCodeChange(e.target.value)}
-                    disabled={enabled} placeholder="24+ characters, provided by project owner" />
-                  <p className="speech-coach-privacy">
-                    {relayIsMock ? "Simulation only: this mode does not send audio to any model." :
-                    "This sends microphone audio to the configured Qwen relay. Provider fees may apply. Only use with project approval."}
-                  </p>
+                    disabled={enabled} />
                 </>
               )}
             </div>
           )}
           {!available ? (
             <p className="speech-coach-error" role="status">
-              This browser does not offer speech recognition. Try a current Chrome or Edge browser.
+              For transcription, use Chrome or Edge.
             </p>
           ) : (
             <button
@@ -115,13 +102,6 @@ export function CoachDock({
               {enabled ? "Turn microphone off" : "Enable microphone"}
             </button>
           )}
-          <p className="speech-coach-privacy">
-            You control when the microphone is on. {provider === "browser" ?
-              "Your browser may use a vendor speech service for transcription." :
-              relayIsMock ? "This local mock relay does not call a speech model." :
-              "Your audio is streamed through the private relay to Qwen."}
-            {" "}Tick-Tock does not save raw audio or transcripts automatically.
-          </p>
           {enabled && (
             <div className="speech-coach-stats">
               <div><strong>{wpm ?? "—"}</strong><span>{rateLabel}</span></div>
@@ -134,7 +114,7 @@ export function CoachDock({
           {enabled && (
             <div className="speech-coach-transcript">
               <strong>Live transcript</strong>
-              <p>{transcript || interim || "Speak to see the transcript here."}</p>
+              <p>{transcript || interim || "Waiting for speech…"}</p>
               {transcript && interim && <em> {interim}</em>}
             </div>
           )}
@@ -161,13 +141,7 @@ export function CoachReport({
   const request = useRef<AbortController | null>(null);
   useEffect(() => () => request.current?.abort(), []);
   const remoteVisible = import.meta.env.VITE_AI_PAID_REVIEW_ENABLED === "true";
-  const timedSections = metrics.sections.filter((section) => section.actual > 0);
-  const mostOver = timedSections.reduce<SpeechMetrics["sections"][number] | undefined>((worst, section) => {
-    const over = section.actual - section.target;
-    if (section.target <= 0 || over <= 0) return worst;
-    return !worst || over > worst.actual - worst.target ? section : worst;
-  }, undefined);
-  const hasTiming = timedSections.length > 0;
+  const hasTiming = metrics.sections.some((section) => section.actual > 0);
   const canRequestReview = hasTiming && accessCode.trim().length >= 24 && !remoteLoading;
 
   const requestRemoteReview = async () => {
@@ -209,7 +183,6 @@ export function CoachReport({
   return (
     <section className="speech-coach-report" aria-label="Speech Coach review">
       {metrics.words > 0 && <>
-      <span className="speech-coach-kicker">Speech Coach · Local analysis</span>
       <h2>Speaking pace</h2>
       <p>
         {metrics.words} {metrics.unitLabel.toLowerCase()} recognized
@@ -225,52 +198,31 @@ export function CoachReport({
           </div>
         ))}
       </div>
-      <h3>Things to check next time</h3>
+      <h3>Pacing tips</h3>
       <ul>{localSuggestions(metrics).map((tip) => <li key={tip}>{tip}</li>)}</ul>
       <button className="speech-coach-transcript-toggle" type="button"
         aria-expanded={showTranscript} onClick={() => setShowTranscript((value) => !value)}>
         {showTranscript ? "Hide" : "View"} transcript
       </button>
       {showTranscript && <p className="speech-coach-report-transcript">{transcript}</p>}
-      {outline.trim() && (
-        <p className="speech-coach-footnote">
-          An optional outline is available, but this free report does not judge content coverage.
-        </p>
-      )}
       </>}
       {remoteVisible && (
         <div className="speech-coach-remote">
-          <h3>AI rehearsal feedback</h3>
-          <p>
-            Sends section timing and any available transcript or outline to the AI model only when you request feedback.
-          </p>
+          <h2>AI rehearsal feedback</h2>
           <PreviewAccessField id="coach-demo-code" code={accessCode} onChange={onAccessCodeChange} />
           <button type="button" onClick={() => { void requestRemoteReview(); }}
             disabled={!canRequestReview}>
             {remoteLoading ? "Generating..." : "Generate AI feedback"}
           </button>
-          {remoteError && (
-            <div role="alert">
-              <p>{remoteError}</p>
-              <p>{mostOver
-                ? `Timing suggestion: Try cutting one detail from ${mostOver.name}.`
-                : "Timing suggestion: Rehearse the transition into your next section."}</p>
-            </div>
-          )}
+          {remoteError && <p role="alert">{remoteError}</p>}
           {feedback && (
             <div className="speech-coach-remote-results">
-              <strong>Feedback and next steps</strong>
               <p>{feedback.summary}</p>
               <ul>{feedback.nextSteps.map((item, i) => <li key={i}>{item}</li>)}</ul>
             </div>
           )}
         </div>
       )}
-      {metrics.words > 0 && <p className="speech-coach-footnote">
-        Estimates only; automatic transcription may contain errors.
-        Chinese metrics approximate characters plus Latin words; other languages use approximate word counts.
-        Local speaking pace uses estimated transcription counts.
-      </p>}
     </section>
   );
 }

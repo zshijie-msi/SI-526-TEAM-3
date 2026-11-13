@@ -58,14 +58,16 @@ try{
   await page.getByRole("button",{name:/Individual/i}).first().click();
   console.log("E2E: individual library");
   await page.getByRole("button",{name:/Start new presentation/i}).click();
-  await page.getByPlaceholder("e.g. Final pitch").fill("Sprint 4 AI Smoke Test");
+  await page.getByRole("textbox", { name: "Presentation title" }).fill("Sprint 4 AI Smoke Test");
   await page.getByLabel(/overall.*minutes/i).fill("3");
   await page.getByText("Suggest sections with AI", { exact: true }).click();
   const access = page.getByLabel("Private preview access code", { exact: true });
   const generate = page.getByRole("button", { name: "Generate section plan" });
+  assert.equal(await page.getByRole("link", { name: "Open Vercel settings" }).count(), 0);
+  assert.equal(await access.getAttribute("placeholder"), null);
   await access.fill("AI_DEMO_ACCESS_CODE");
   assert.equal(await generate.isEnabled(), false);
-  await page.getByText(/You pasted the variable name/).waitFor();
+  await page.getByText("Enter the code value.", { exact: true }).waitFor();
   await access.fill(previewCode);
   await generate.click();
   await page.getByRole("heading", { name: "Suggested plan · 3:00" }).waitFor();
@@ -74,7 +76,7 @@ try{
   await page.getByLabel(/overall.*minutes/i).fill("");
   await page.getByRole("button",{name:/Review presentation/i}).click();
   console.log("E2E: Ready loaded");
-  assert.ok((await page.locator(".history-panel").innerText()).includes("No rehearsal history saved"));
+  assert.ok((await page.locator(".history-panel").innerText()).includes("No saved rehearsals"));
 
   await page.locator(".speech-coach-notes summary").click();
   await page.locator("#sprint4-ai-outline").fill("Intro: explain the main problem");
@@ -86,6 +88,8 @@ try{
     await sleep(900);
     await page.getByRole("button",{name:"Finish",exact:true}).click();
     console.log("E2E: rehearsal "+i+" finished");
+    const copy = await page.locator("body").innerText();
+    assert.doesNotMatch(copy, /Sends section timing|This is a local-only record|Your saved runs are used|Save setup only stores|Save setup keeps/);
     assert.ok((await page.locator("body").innerText()).includes("Speaking pace"),"Missing speech coach report in rehearsal "+i);
     if (i === 1) {
       await page.getByRole("button", { name: "Generate AI feedback" }).click();
@@ -114,7 +118,7 @@ try{
   console.log("E2E: presentation setup opened");
   await page.getByRole("button",{name:"Start",exact:true}).click();
   await page.locator(".present-history-hint").waitFor({timeout:2000});
-  assert.match(await page.locator(".present-history-hint").innerText(),/rehearsals/i);
+  assert.match(await page.locator(".present-history-hint").innerText(),/Rehearsal reminder/);
   const extra=await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth);
   assert.ok(extra<=1,"Horizontal overflow: "+extra);
   assert.deepEqual(errors,[],"React/browser page errors");

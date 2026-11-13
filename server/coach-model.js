@@ -124,7 +124,7 @@ export async function coachJson({ system, input, schema, maxTokens, timeout = 12
 export function coachError(res, error) {
   const providerStatus = error instanceof CoachModelError ? error.providerStatus : 502;
   if (providerStatus === 401 || providerStatus === 402 || providerStatus === 403) {
-    return res.status(503).json({ error: "The model account needs activation or credits. The timer still works." });
+    return res.status(503).json({ error: "AI model needs activation or credits." });
   }
   if (providerStatus === 429) {
     return res.status(429).json({ error: "The model is busy. Try again in a moment." });

@@ -71,7 +71,7 @@ export function useSpeechCoach({
     }
     const Constructor = recognitionConstructor();
     if (!Constructor) {
-      setError("Speech recognition is not supported in this browser. Try Chrome or Edge.");
+      setError("For transcription, use Chrome or Edge.");
       setEnabled(false);
       return;
     }
@@ -112,11 +112,11 @@ export function useSpeechCoach({
       if (event.error === "no-speech" || event.error === "aborted") return;
       if (event.error === "not-allowed" || event.error === "service-not-allowed") {
         stopForError = true;
-        setError("Microphone or speech recognition access was denied. Check browser permissions.");
+        setError("Allow microphone access in your browser.");
         setEnabled(false);
       } else {
         stopForError = true;
-        setError("Speech recognition failed (" + event.error + "). You can keep using the timer.");
+        setError("Transcription stopped. Try again.");
         setEnabled(false);
       }
     };

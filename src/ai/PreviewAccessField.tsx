@@ -11,17 +11,10 @@ export function PreviewAccessField({
     <>
       <label htmlFor={id}>Private preview access code</label>
       <input id={id} type="password" autoComplete="off" value={code} disabled={disabled}
-        spellCheck={false} aria-describedby={id + "-help"} aria-invalid={nameWasPasted}
-        placeholder="Paste the access code from Vercel"
+        spellCheck={false} aria-describedby={nameWasPasted ? id + "-error" : undefined}
+        aria-invalid={nameWasPasted}
         onChange={(event) => onChange(event.target.value)} />
-      <p id={id + "-help"}>
-        {nameWasPasted
-          ? "You pasted the variable name. In Vercel, reveal and copy its Value, then paste it here."
-          : "In Vercel Environment Variables, reveal and copy the Value of AI_DEMO_ACCESS_CODE."}
-        {" "}
-        <a href="https://vercel.com/zshijie-9188s-projects/si-526-team-3/settings/environment-variables"
-          target="_blank" rel="noopener noreferrer">Open Vercel settings</a>
-      </p>
+      {nameWasPasted && <p id={id + "-error"} role="alert">Enter the code value.</p>}
     </>
   );
 }

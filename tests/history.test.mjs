@@ -64,7 +64,7 @@ test("exact text match is cautious and only section-tagged outline points count"
  const hints=buildHistoryHints({runs,sections,outline:"Intro: mention the business model"});
  const h=hints.find(x=>x.kind==="outline");
  assert.ok(h);
- assert.match(h.evidence,/synonyms are not detected/);
+ assert.match(h.evidence,/Exact phrase missing in 2 of 2 transcripts/);
  assert.equal(buildHistoryHints({runs:runs.map(r=>({...r,sections:r.sections.map(s=>({...s,transcript:undefined}))})),sections,outline:"Intro: mention the business model"}).some(x=>x.kind==="outline"),false);
 });
 test("corrupt storage does not break the app",()=>{

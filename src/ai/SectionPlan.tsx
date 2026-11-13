@@ -58,7 +58,6 @@ export function SectionPlan({
   return (
     <details className="speech-coach-remote" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
       <summary>Suggest sections with AI</summary>
-      <p>Uses the total time and any existing section names. A title is optional.</p>
       <PreviewAccessField id="plan-ai-code" code={code} onChange={onCodeChange} />
       <button type="button" onClick={() => { void generate(); }} disabled={loading || code.trim().length < 24}>
         {loading ? "Generating…" : "Generate section plan"}
@@ -67,17 +66,16 @@ export function SectionPlan({
       {preview && (
         <div className="speech-coach-remote-results" aria-label="AI section plan">
           <h3>Suggested plan · {formatTime(target)}</h3>
-          {preview.replacesExisting && <p>Your current sections exceed the target. Applying this plan replaces them.</p>}
           <ol>
             {preview.sections.map((section, index) => (
               <li key={index}>
                 <strong>{section.name} · {formatTime(section.seconds)}</strong>
-                {section.purpose ? <p>{section.purpose}</p> : <p>Keep existing section</p>}
+                {section.purpose && <p>{section.purpose}</p>}
               </li>
             ))}
           </ol>
           <button type="button" onClick={() => { onApply(preview.sections); setPreview(null); setOpen(false); }}>
-            Apply section plan
+            {preview.replacesExisting ? "Replace sections" : "Apply section plan"}
           </button>
           <button type="button" onClick={() => setPreview(null)}>Dismiss</button>
         </div>
