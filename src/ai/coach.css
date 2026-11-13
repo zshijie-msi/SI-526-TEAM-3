@@ -1,0 +1,179 @@
+/* Optional microphone coach: collapsed by default to protect the timer UI. */
+.speech-coach-dock {
+  position: fixed;
+  top: 92px;
+  right: 16px;
+  z-index: 80;
+  width: min(330px, calc(100vw - 32px));
+  color: #172536;
+  font-family: inherit;
+  text-align: left;
+}
+.speech-coach-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 13px;
+  background: #fff;
+  border: 1px solid #d6dfe4;
+  border-radius: 13px;
+  color: #172536;
+  font: 600 13px/1.3 inherit;
+  cursor: pointer;
+  box-shadow: 0 3px 16px #18293b1c;
+}
+.speech-coach-toggle:hover, .speech-coach-toggle:focus-visible { outline: 2px solid #328a8e; outline-offset: 2px; }
+.speech-coach-panel {
+  margin-top: 7px;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid #dce5e9;
+  border-radius: 15px;
+  box-shadow: 0 8px 30px #1725362b;
+  max-height: min(74vh, 520px);
+  overflow: auto;
+}
+.speech-coach-panel p { margin: 9px 0; line-height: 1.45; }
+.speech-coach-mic {
+  display: block; width: 100%; padding: 11px; margin: 12px 0;
+  border: 1px solid #2f777d; border-radius: 9px;
+  background: #eef8f8; color: #164d54; font: inherit; font-weight: 650; cursor: pointer;
+}
+.speech-coach-mic--on { background: #fff3ef; border-color: #c67656; color: #894222; }
+.speech-coach-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 14px 0; }
+.speech-coach-stats > div { padding: 11px; border-radius: 9px; background: #f3f7f9; }
+.speech-coach-stats strong { display: block; font-size: 21px; }
+.speech-coach-stats span { display: block; color: #526475; font-size: 11px; }
+.speech-coach-cue {
+  background: #e9f5f3; border-left: 3px solid #328a8e;
+  padding: 10px; border-radius: 5px; color: #1b5154; font-size: 13px;
+}
+.speech-coach-error { padding: 9px; background: #fff3e9; color: #904c24; border-radius: 8px; font-size: 12px; }
+.speech-coach-transcript { margin-top: 13px; border-top: 1px solid #dfe7ea; padding-top: 12px; }
+.speech-coach-transcript strong { font-size: 12px; }
+.speech-coach-transcript p { color: #364d5d; font-size: 13px; }
+.speech-coach-transcript em { color: #72818b; }
+.speech-coach-report {
+  margin: 20px 0; padding: 20px; border: 1px solid #d4e7e6;
+  border-radius: 16px; background: #f6fbfa; color: #172536;
+}
+.speech-coach-report h2 { font-size: 20px; margin: 4px 0 8px; }
+.speech-coach-report h3 { font-size: 15px; margin: 16px 0 7px; }
+.speech-coach-report p, .speech-coach-report li { font-size: 13px; line-height: 1.5; }
+.speech-coach-section-list > div {
+  display: flex; flex-wrap: wrap; gap: 6px; justify-content: space-between;
+  border-bottom: 1px solid #dae8e7; padding: 7px 0; font-size: 12px;
+}
+.speech-coach-transcript-toggle {
+  background: none; border: 0; padding: 6px 0; text-decoration: underline;
+  color: #216d77; font: inherit; font-size: 13px; cursor: pointer;
+}
+.speech-coach-report-transcript {
+  background: #fff; border: 1px solid #dbe6e6; border-radius: 8px;
+  padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+@media (max-width: 620px) {
+  .speech-coach-dock { top: 69px; right: 8px; width: min(310px, calc(100vw - 16px)); }
+  .speech-coach-toggle { padding: 8px 10px; font-size: 12px; }
+  .speech-coach-panel { padding: 12px; max-height: 60vh; }
+}
+
+/* Optional outline on Ready screen. Folds closed until a user asks for it. */
+.speech-coach-notes {
+  margin: 16px 0;
+  padding: 13px 15px;
+  border: 1px solid #d5e4e3;
+  border-radius: 12px;
+  background: #f8fcfb;
+  color: #203741;
+}
+.speech-coach-notes summary { font-size: 14px; font-weight: 650; cursor: pointer; }
+.speech-coach-notes textarea {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-height: 92px;
+  margin-top: 10px;
+  padding: 10px;
+  background: #fff;
+  color: #203741;
+  border: 1px solid #b9caca;
+  border-radius: 9px;
+  font: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+.speech-coach-remote {
+  margin-top: 15px;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #e5d5b1;
+  border-radius: 11px;
+}
+.speech-coach-remote p { font-size: 12px; color: #576774; }
+.speech-coach-remote label { display: block; font-size: 12px; margin: 8px 0 5px; }
+.speech-coach-remote input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 9px;
+  border: 1px solid #becbce;
+  border-radius: 8px;
+  margin-bottom: 9px;
+}
+.speech-coach-remote button {
+  width: 100%;
+  padding: 9px;
+  background: #e8f0ed;
+  color: #28525a;
+  border: 1px solid #8db5b0;
+  border-radius: 9px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.speech-coach-remote button:disabled { opacity: .55; cursor: not-allowed; }
+.speech-coach-remote-results { margin-top: 12px; border-top: 1px solid #dce7e7; }
+
+.speech-coach-language {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+.speech-coach-language select {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #b7cbd0;
+  border-radius: 8px;
+  background: #fff;
+  color: #172536;
+  font: inherit;
+  font-size: 13px;
+}
+.speech-coach-language select:disabled { opacity: .65; cursor: not-allowed; }
+
+/* Sprint 4 retains the 430px centered Sprint 3 mobile app on wide screens. */
+.speech-coach-dock {
+  right: max(9px, calc((100vw - 430px) / 2 + 9px));
+  width: min(308px, calc(100vw - 18px));
+}
+.speech-coach-toggle { width: max-content; max-width: 100%; margin-left: auto; }
+.sprint4-ai-present-optin {
+  margin: 10px 0 20px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  color: #365369;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.sprint4-ai-present-optin input { margin-top: 3px; }
+@media (max-width: 620px) {
+  .speech-coach-dock { top: 75px; right: 8px; }
+  .speech-coach-toggle { box-shadow: 0 3px 9px #18293b22; }
+}

@@ -1126,21 +1126,9 @@ h3 {
   background: #fff;
 }
 
-.presentation-save-panel > span {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
 .presentation-save-panel strong {
   color: #173e5e;
-  font-size: 12px;
-}
-
-.presentation-save-panel small {
-  color: #607385;
-  font-size: 10px;
-  line-height: 1.35;
+  font-size: 14px;
 }
 
 .presentation-save-panel .button {
@@ -2575,10 +2563,6 @@ h3 {
   margin-top: 28px;
 }
 
-.launch-options h2 {
-  margin-bottom: 10px;
-}
-
 .launch-option {
   width: 100%;
   min-height: 82px;
@@ -2620,25 +2604,9 @@ h3 {
   background: rgba(255, 255, 255, 0.1);
 }
 
-.launch-option > span:nth-child(2) {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
 .launch-option strong {
+  min-width: 0;
   font-size: 16px;
-}
-
-.launch-option small {
-  color: #607385;
-  font-size: 12px;
-  line-height: 1.35;
-}
-
-.launch-option--present small {
-  color: #b9c8d3;
 }
 
 .launch-option:focus-visible {
@@ -3432,10 +3400,6 @@ h3 {
   background: rgba(255, 255, 255, 0.62);
 }
 
-.present-screen.timer-color--muted .present-advance > small {
-  color: #718792;
-}
-
 .present-screen.timer-color--muted .present-advance:focus-visible {
   outline-color: rgba(49, 91, 120, 0.4);
 }
@@ -3443,12 +3407,6 @@ h3 {
 .present-advance > span {
   font-size: 17px;
   font-weight: 600;
-}
-
-.present-advance > small {
-  grid-column: 1 / -1;
-  color: rgba(231, 237, 241, 0.4);
-  font-size: 10px;
 }
 
 .present-advance:focus-visible {
