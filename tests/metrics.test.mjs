@@ -1,6 +1,22 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { countEnglishWords, countSpeechUnits, wordsPerMinute, summarizeSpeech, livePaceCue, localSuggestions } from "../src/ai/metrics.ts";
+import { buildSpeechFeedback } from "../src/ai/speechFeedback.ts";
+
+test("speech feedback uses recognized words and actual microphone coverage", () => {
+  const opening = { id: 1, name: "Opening", transcript: "Um, the prototype works. Um, it fixes one issue.",
+    capturedUnits: 10, capturedSeconds: 12, actualSeconds: 15, targetSeconds: 20 };
+  const close = { id: 2, name: "Close", transcript: "Please try it.", capturedUnits: 3,
+    capturedSeconds: 12, actualSeconds: 20, targetSeconds: 10 };
+  const { suggestions } = buildSpeechFeedback([opening, close], "en-US");
+  assert.match(suggestions[0].suggestion, /12s and captured 3 words/);
+  assert.equal(suggestions[0].sectionName, "Close");
+  assert.equal(suggestions[1].quote, "Um");
+  assert.match(suggestions[1].suggestion, /appeared 2 times/);
+  assert.equal(buildSpeechFeedback([{ ...close, capturedSeconds: 2 }], "en-US").suggestions.length, 0);
+  assert.equal(buildSpeechFeedback([{ ...close, transcript: "", capturedUnits: 0 }], "en-US").practicePrompt, null);
+  assert.ok(buildSpeechFeedback([{ ...close, capturedSeconds: 0, capturedUnits: 0 }], "en-US").practicePrompt);
+});
 
 test("English word counting handles punctuation and contractions", () => {
   assert.equal(countEnglishWords("Hello, we're ready. 2026!"), 4);

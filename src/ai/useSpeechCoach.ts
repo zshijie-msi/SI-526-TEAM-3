@@ -16,6 +16,8 @@ interface Recognition {
   onresult: ((event: SpeechEvent) => void) | null;
   onerror: ((event: SpeechErrorEvent) => void) | null;
   onend: (() => void) | null;
+  onaudiostart: (() => void) | null;
+  onaudioend: (() => void) | null;
   start(): void;
   stop(): void;
 }
@@ -53,6 +55,7 @@ export function useSpeechCoach({
   const [error, setError] = useState("");
   const [listening, setListening] = useState(false);
   const [transcriptPending, setTranscriptPending] = useState(false);
+  const [captureSecondsBySection, setCaptureSecondsBySection] = useState<Record<number, number>>({});
   const [restartRevision, setRestartRevision] = useState(0);
   const captureRevision = useRef(0);
   const runRevision = useRef(0);
@@ -71,11 +74,13 @@ export function useSpeechCoach({
     setError("");
     setListening(false);
     setTranscriptPending(false);
+    setCaptureSecondsBySection({});
   };
   const restartSection = () => {
     captureRevision.current++;
     setRestartRevision(captureRevision.current);
     setSegments((current) => current.filter((segment) => segment.sectionId !== sectionId));
+    setCaptureSecondsBySection((current) => ({ ...current, [sectionId]: 0 }));
     setInterim("");
   };
 
@@ -103,6 +108,23 @@ export function useSpeechCoach({
     recognition.lang = language;
     recognition.continuous = true;
     recognition.interimResults = true;
+    let audioStartedAt: number | null = null;
+    const endAudioCapture = () => {
+      if (audioStartedAt === null || rehearsalSection === null) return;
+      const seconds = (performance.now() - audioStartedAt) / 1000;
+      audioStartedAt = null;
+      if (sameRun() && captureRevision.current === restartRevision) {
+        setCaptureSecondsBySection((current) => ({
+          ...current, [rehearsalSection]: (current[rehearsalSection] ?? 0) + seconds,
+        }));
+      }
+    };
+    if (rehearsalSection !== null) {
+      recognition.onaudiostart = () => {
+        if (!disposed && !finishCapture && audioStartedAt === null) audioStartedAt = performance.now();
+      };
+      recognition.onaudioend = endAudioCapture;
+    }
 
     recognition.onresult = (event) => {
       if (disposed || !sameRun() || (rehearsalSection !== null && captureRevision.current !== restartRevision)) return;
@@ -154,6 +176,7 @@ export function useSpeechCoach({
     };
 
     recognition.onend = () => {
+      endAudioCapture();
       started = false;
       if (finishCapture) {
         finishCapture();
@@ -174,8 +197,11 @@ export function useSpeechCoach({
       recognition.onend = null;
       recognition.onresult = null;
       recognition.onerror = null;
+      recognition.onaudiostart = null;
+      recognition.onaudioend = null;
     };
     return () => {
+      endAudioCapture();
       if (restartTimer !== null) window.clearTimeout(restartTimer);
       if (rehearsalSection === null || !started) {
         detach();
@@ -255,6 +281,7 @@ export function useSpeechCoach({
     error,
     segments,
     transcriptPending,
+    captureSecondsBySection,
     restartSection,
     interim,
     reset,

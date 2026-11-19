@@ -71,7 +71,7 @@ test("the five-minute flow validates the time budget and never calls a model wit
   assert.deepEqual(timingOnly.body.nextSteps, ["Cut one detail from Intro."]);
 });
 
-test("rehearsal content feedback needs speech and accepts only supported quotes", async (t) => {
+test("rehearsal feedback resolves citations itself and keeps usable items", async (t) => {
   process.env.AI_FEEDBACK_ENABLED = "true";
   process.env.AI_DEMO_ACCESS_CODE = accessCode;
   process.env.AI_GATEWAY_API_KEY = "test-key";
@@ -83,11 +83,11 @@ test("rehearsal content feedback needs speech and accepts only supported quotes"
   let calls = 0;
   let temporarilyUnavailable = true;
   const grounded = {
-    sectionId: 2, quote: "find bugs faster",
+    sectionId: 2, excerptId: 1, quote: "a model-paraphrased quote",
     suggestion: "Name the kind of bug the new test would catch.",
   };
   let returnedSuggestions = [
-    { ...grounded, sectionId: 1 },
+    { ...grounded, excerptId: 11 },
     { ...grounded, suggestion: "nextSteps: [some malformed markup]" },
     grounded,
   ];
@@ -96,8 +96,10 @@ test("rehearsal content feedback needs speech and accepts only supported quotes"
     const input = JSON.parse(JSON.parse(request.body).messages[1].content);
     assert.deepEqual(input, {
       sections: [
-        { id: 1, name: "Intro", transcript: "This is our team's new test suite." },
-        { id: 2, name: "Approach", transcript: "It will help us find bugs faster." },
+        { id: 1, name: "Intro", actualSeconds: 12, targetSeconds: 20,
+          excerpts: [{ id: 1, text: "This is our team's new test suite." }] },
+        { id: 2, name: "Approach", actualSeconds: null, targetSeconds: null,
+          excerpts: [{ id: 1, text: "It will help us find bugs faster." }] },
       ],
       optionalOutline: "Approach: describe the test",
     });
@@ -110,7 +112,7 @@ test("rehearsal content feedback needs speech and accepts only supported quotes"
 
   const input = {
     mode: "content", outline: "Approach: describe the test", sections: [
-      { id: 1, name: "Intro", transcript: "This is our team's new test suite.", actual: 12, target: 20 },
+      { id: 1, name: "Intro", transcript: "This is our team's new test suite.", actualSeconds: 12, targetSeconds: 20 },
       { id: 2, name: "Approach", transcript: "It will help us find bugs faster." },
       { id: 3, name: "Close", transcript: "" },
     ],
@@ -122,8 +124,8 @@ test("rehearsal content feedback needs speech and accepts only supported quotes"
   assert.equal(result.status, 200);
   assert.equal(calls, 2);
   assert.deepEqual(result.body.suggestions, [{
-    sectionName: "Approach", quote: grounded.quote, suggestion: grounded.suggestion,
+    sectionName: "Approach", quote: "It will help us find bugs faster.", suggestion: grounded.suggestion,
   }]);
-  returnedSuggestions = [{ ...grounded, quote: "invented quote" }];
-  assert.equal((await post(rehearsalFeedback, input)).status, 502);
+  returnedSuggestions = [{ ...grounded, excerptId: 11 }];
+  assert.deepEqual(await post(rehearsalFeedback, input), { status: 200, body: { suggestions: [] } });
 });

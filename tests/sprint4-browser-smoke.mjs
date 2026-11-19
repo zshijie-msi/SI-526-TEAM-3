@@ -25,10 +25,13 @@ try{
       constructor(){
         this.lang = "en-US";
         this.transcript = ++recognitionCount % 2
-          ? "We want to make our group meetings better."
+          ? "Um, we want shorter group meetings. Um, meetings should end with a decision."
           : "We split every assignment into smaller chunks.";
       }
-      start(){window.startedRehearsalSections = (window.startedRehearsalSections ?? 0) + 1;}
+      start(){
+        window.startedRehearsalSections = (window.startedRehearsalSections ?? 0) + 1;
+        this.onaudiostart?.();
+      }
       stop(){
         setTimeout(() => {
           this.onresult?.({ resultIndex: 0, results: [{ isFinal: true, 0: { transcript: this.transcript } }] });
@@ -58,14 +61,19 @@ try{
       replacesExisting: false,
     } });
   });
+  let feedbackRequests = 0;
   await page.route("**/api/ai-feedback", async (route) => {
     assert.equal(route.request().headers()["x-ai-demo-code"], previewCode);
     const input = route.request().postDataJSON();
     assert.equal(input.mode, "content");
     assert.deepEqual(input.sections.map(({ name, transcript }) => [name, transcript]), [
-      ["Intro", "We want shorter group meetings."],
+      ["Intro", "Um, we want shorter group meetings. Um, meetings should end with a decision."],
       ["Main idea", "We split every assignment into smaller chunks."],
     ]);
+    if (++feedbackRequests === 2) {
+      await route.fulfill({ status: 502, json: { error: "Model unavailable." } });
+      return;
+    }
     await route.fulfill({ json: { suggestions: [{
       sectionName: "Intro", quote: "shorter group meetings",
       suggestion: "Name the decision each meeting should end with.",
@@ -112,20 +120,26 @@ try{
     assert.doesNotMatch(copy, /Sends section timing|This is a local-only record|Your saved runs are used|Save setup only stores|Save setup keeps/);
     if (i === 1) {
       await page.getByRole("heading", { name: "Speaking pace" }).waitFor();
+      const fillerFeedback = page.getByText("This filler appeared 2 times.", { exact: false });
+      await fillerFeedback.waitFor();
+      assert.equal(feedbackRequests, 0, "Local feedback should not require a model request");
+      assert.equal(await page.locator(".rehearsal-transcript").getAttribute("open"), null);
+      await page.getByRole("button", { name: "Generate AI feedback" }).click();
+      await page.getByText("Name the decision each meeting should end with.", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "Generate AI feedback" }).click();
+      await page.getByText("AI suggestions are unavailable. Your speech feedback is ready.", { exact: true }).waitFor();
+      await fillerFeedback.waitFor();
       await page.getByText("Review transcript", { exact: true }).click();
       const intro = page.getByRole("textbox", { name: "Intro", exact: true });
-      assert.equal(await intro.inputValue(), "We want to make our group meetings better.");
+      assert.equal(await intro.inputValue(), "Um, we want shorter group meetings. Um, meetings should end with a decision.");
       const mainIdea = page.getByRole("textbox", { name: "Main idea", exact: true });
       await mainIdea.waitFor();
       await page.waitForFunction(() => document.querySelectorAll(".rehearsal-transcript textarea")[1]?.value
         === "We split every assignment into smaller chunks.");
-      await intro.fill("We want shorter group meetings.");
-      await page.getByRole("button", { name: "Generate AI feedback" }).click();
-      await page.getByText("Name the decision each meeting should end with.", { exact: true }).waitFor();
       await page.getByText("shorter group meetings", { exact: true }).waitFor();
     } else {
       assert.equal(await page.getByRole("button", { name: "Generate AI feedback" }).isEnabled(), false);
-      await page.getByText("No speech captured. Add what you said.", { exact: true }).waitFor();
+      await page.getByText("No speech captured. Enable the microphone next time or add what you said.", { exact: true }).waitFor();
     }
     await page.getByRole("button",{name:/Save rehearsal to history/i}).click();
     const records=await page.evaluate(()=>JSON.parse(localStorage.getItem("tick-tock-ai-rehearsal-history-v1")||"[]"));
@@ -133,6 +147,8 @@ try{
     assert.ok(records.every(r=>!r.transcriptSaved),"Transcript must be opt-in");
     if (i === 1) {
       assert.deepEqual(records[0].feedback.suggestions, [{
+        sectionName: "Intro", suggestion: "This filler appeared 2 times. Try replacing it with a short pause before the next idea.",
+      }, {
         sectionName: "Intro", suggestion: "Name the decision each meeting should end with.",
       }]);
       await page.getByRole("button", { name: "View history" }).click();
@@ -156,7 +172,7 @@ try{
   const extra=await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth);
   assert.ok(extra<=1,"Horizontal overflow: "+extra);
   assert.deepEqual(errors,[],"React/browser page errors");
-  assert.deepEqual(modelCalls.map(url => new URL(url).pathname), ["/api/section-plan", "/api/ai-feedback"]);
+  assert.deepEqual(modelCalls.map(url => new URL(url).pathname), ["/api/section-plan", "/api/ai-feedback", "/api/ai-feedback"]);
   console.log("SPRINT4 BROWSER SMOKE PASSED: section plan, saved AI feedback, Present history hint and 390px layout");
 }catch(err){
   console.error("E2E FAILURE:",err);

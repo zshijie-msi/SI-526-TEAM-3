@@ -4,6 +4,7 @@ import tickTockWordmark from "./assets/tick-tock-wordmark.png";
 import { CoachDock, CoachReport } from "./ai/CoachUI";
 import { countSpeechUnits, livePaceCue, summarizeSpeech } from "./ai/metrics";
 import { useSpeechCoach } from "./ai/useSpeechCoach";
+import { buildSpeechFeedback } from "./ai/speechFeedback";
 import { createRehearsalRun, historyForPresentation, historyOwner, readHistory, upsertHistory, writeHistory, type RehearsalFeedback } from "./ai/history";
 import { buildHistoryHints, cueForSection } from "./ai/historyInsights";
 import { HistoryPanel, PresentHistoryHint, SaveRehearsalPanel } from "./ai/HistoryUI";
@@ -1104,7 +1105,7 @@ export default function App() {
     saveFeedbackTimeout.current = window.setTimeout(() => setSaveConfirmation(""), 5000);
   };
 
-  const saveRehearsalHistory = () => {
+  const saveRehearsalHistory = (speechSuggestions: ReturnType<typeof buildSpeechFeedback>["suggestions"]) => {
     if (speechCoach.provider === "qwen" && speechCoach.relayIsMock && speechCoach.segments.length > 0) {
       setHistorySaveError("Simulated rehearsals can’t be saved.");
       return;
@@ -1126,7 +1127,10 @@ export default function App() {
       duration: totalElapsed,
       includeTranscript: saveHistoryTranscript,
       transcriptEdits: rehearsalTranscriptEdits,
-      feedback: rehearsalFeedback,
+      feedback: speechSuggestions.length
+        ? { suggestions: [...speechSuggestions, ...(rehearsalFeedback && "suggestions" in rehearsalFeedback
+          ? rehearsalFeedback.suggestions : [])] }
+        : rehearsalFeedback,
     });
     const next = upsertHistory(historyRuns, run);
     if (!writeHistory(window.localStorage, next)) {
@@ -2747,11 +2751,17 @@ export default function App() {
   }
 
   const actualTotal = actualTimes.reduce((total, value) => total + (value || 0), 0);
-  const rehearsalTranscripts = sections.slice(0, rehearsalIncomplete ? rehearsalEndIndex + 1 : sections.length)
-    .map(({ id, name }) => ({
-      id, name, transcript: rehearsalTranscriptEdits[id] ?? speechCoach.segments
+  const rehearsalSpeechSections = speechMetrics.sections
+    .slice(0, rehearsalIncomplete ? rehearsalEndIndex + 1 : sections.length)
+    .map(({ id, name, actual, target, words }) => ({
+      id, name, actualSeconds: actual, targetSeconds: target, capturedUnits: words,
+      capturedSeconds: speechCoach.captureSecondsBySection[id] ?? 0,
+      transcript: rehearsalTranscriptEdits[id] ?? speechCoach.segments
         .filter((segment) => segment.sectionId === id).map((segment) => segment.text).join(" "),
     }));
+  const speechFeedback = buildSpeechFeedback(rehearsalSpeechSections, speechMetrics.language);
+  const speechSuggestions = speechFeedback.suggestions.length || rehearsalFeedback || !speechFeedback.practicePrompt
+    ? speechFeedback.suggestions : [speechFeedback.practicePrompt];
   const totalDifference = actualTotal - totalTarget;
   // Only sections that were fully finished are compared against their targets.
   const finishedCount = rehearsalIncomplete ? rehearsalEndIndex : sections.length;
@@ -2815,14 +2825,15 @@ export default function App() {
           accessCode={aiAccessCode} onAccessCodeChange={setAiAccessCode}
           feedback={rehearsalFeedback} onFeedback={setRehearsalFeedback}
           rehearsal={{
-            sections: rehearsalTranscripts,
+            sections: rehearsalSpeechSections,
+            speechSuggestions,
             transcriptPending: speechCoach.transcriptPending,
             onTranscriptChange: (id, transcript) =>
               setRehearsalTranscriptEdits((current) => ({ ...current, [id]: transcript })),
           }} />
         <SaveRehearsalPanel saved={savedHistoryRunId === currentRehearsalId}
           savingError={historySaveError} saveTranscript={saveHistoryTranscript}
-          setSaveTranscript={setSaveHistoryTranscript} onSave={saveRehearsalHistory}
+          setSaveTranscript={setSaveHistoryTranscript} onSave={() => saveRehearsalHistory(speechSuggestions)}
           transcriptPending={speechCoach.transcriptPending}
           hasUnsavedFeedback={Boolean(rehearsalFeedback && savedRehearsalFeedback.current !== rehearsalFeedback)} />
         <HistoryPanel runs={presentationHistory} hints={historyHints}
