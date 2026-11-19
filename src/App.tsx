@@ -52,6 +52,7 @@ type SavedPresentation = {
   // Quiet Present view: hides times and ahead/behind status while presenting.
   quietMode?: boolean;
   coachOutline?: string;
+  speechScript?: string;
 };
 // Story 12 (SCRUM-133): one autosaved draft per mode, per profile (guest included).
 type AutosaveDraft = {
@@ -68,6 +69,7 @@ type AutosaveDraft = {
   hapticsEnabled: boolean;
   quietMode?: boolean;
   coachOutline?: string;
+  speechScript?: string;
   aiHistoryId?: string;
   editor: {
     editingId: number | null;
@@ -204,6 +206,7 @@ function setupSignature(setup: {
   hapticsEnabled: boolean;
   quietMode?: boolean;
   coachOutline?: string;
+  speechScript?: string;
 }) {
   return JSON.stringify({
     title: setup.title.trim(),
@@ -216,6 +219,7 @@ function setupSignature(setup: {
     hapticsEnabled: setup.hapticsEnabled,
     quietMode: Boolean(setup.quietMode),
     coachOutline: (setup.coachOutline ?? "").trim(),
+    speechScript: (setup.speechScript ?? "").trim(),
   });
 }
 
@@ -266,7 +270,8 @@ function isMeaningfulDraft(draft: AutosaveDraft) {
     draft.editor.editingId !== null &&
     Boolean(draft.editor.name || Number(draft.editor.minutes || 0) || Number(draft.editor.seconds || 0));
   return Boolean(
-    draft.title.trim() || draft.speakers.length || !onlyBlankIntro || editorHasText || draft.editor.newSpeaker.trim(),
+    draft.title.trim() || draft.speechScript?.trim() || draft.speakers.length || !onlyBlankIntro ||
+      editorHasText || draft.editor.newSpeaker.trim(),
   );
 }
 
@@ -544,6 +549,7 @@ export default function App() {
   const [activeSavedId, setActiveSavedId] = useState<string | null>(null);
   const [aiHistoryId, setAiHistoryId] = useState<string>(() => makeId());
   const [coachOutline, setCoachOutline] = useState("");
+  const [speechScript, setSpeechScript] = useState("");
   const [aiAccessCode, setAiAccessCode] = useState("");
   const [historyRuns, setHistoryRuns] = useState(() => readHistory(window.localStorage));
   const [saveHistoryTranscript, setSaveHistoryTranscript] = useState(false);
@@ -639,6 +645,7 @@ export default function App() {
     hapticsEnabled,
     quietMode,
     coachOutline,
+    speechScript,
   });
   const hasUnsavedChanges = activeSavedId !== null && currentSignature !== savedSignature;
 
@@ -717,6 +724,7 @@ export default function App() {
       hapticsEnabled,
       quietMode,
       coachOutline,
+      speechScript,
       aiHistoryId,
       editor: {
         editingId,
@@ -743,6 +751,7 @@ export default function App() {
     hapticsEnabled,
     quietMode,
     coachOutline,
+    speechScript,
     aiHistoryId,
     editingId,
     draftName,
@@ -1097,6 +1106,7 @@ export default function App() {
     hapticsEnabled,
     quietMode,
     coachOutline: coachOutline.trim(),
+    speechScript,
   });
 
   const showSaveFeedback = (message: string) => {
@@ -1236,6 +1246,7 @@ export default function App() {
   const startNewPresentation = (mode: PresentationMode) => {
     setAiHistoryId(makeId());
     setCoachOutline("");
+    setSpeechScript("");
     setPresentationMode(mode);
     setTitle("");
     // SCRUM-149: no placeholder speakers; the Intro section starts Unassigned.
@@ -1273,6 +1284,7 @@ export default function App() {
   ) => {
     setAiHistoryId(presentation.id);
     setCoachOutline(presentation.coachOutline ?? "");
+    setSpeechScript(presentation.speechScript ?? "");
     setTitle(presentation.title);
     setPresentationMode(presentation.presentationMode);
     setSections(presentation.sections);
@@ -1342,6 +1354,7 @@ export default function App() {
       : undefined;
     setAiHistoryId(saved?.id ?? draft.aiHistoryId ?? makeId());
     setCoachOutline(draft.coachOutline ?? saved?.coachOutline ?? "");
+    setSpeechScript(draft.speechScript ?? saved?.speechScript ?? "");
     setPresentationMode(draft.presentationMode);
     setTitle(draft.title);
     setSections(draft.sections);
@@ -1991,6 +2004,7 @@ export default function App() {
             {import.meta.env.VITE_AI_PAID_REVIEW_ENABLED === "true" && presentationTarget !== null && editingId === null && (
               <SectionPlan key={JSON.stringify([presentationTarget, title, sections])}
                 target={presentationTarget} title={title} sections={sections}
+                script={speechScript} onScriptChange={setSpeechScript}
                 code={aiAccessCode} onCodeChange={setAiAccessCode} formatTime={formatTime}
                 onApply={(plan) => {
                   setSections(plan.map((item) => {
@@ -2821,7 +2835,8 @@ export default function App() {
           <small>{formatTime(totalTarget)} target</small>
         </div>
 
-        <CoachReport key={currentRehearsalId} metrics={speechMetrics} transcript={speechCoach.transcript} outline={coachOutline}
+        <CoachReport key={currentRehearsalId} metrics={speechMetrics} transcript={speechCoach.transcript}
+          outline={coachOutline} script={speechScript}
           accessCode={aiAccessCode} onAccessCodeChange={setAiAccessCode}
           feedback={rehearsalFeedback} onFeedback={setRehearsalFeedback}
           rehearsal={{

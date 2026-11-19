@@ -46,19 +46,22 @@ try{
   page.setDefaultTimeout(8000);
   console.log("E2E: Vite ready, Chromium launched");
   const previewCode = "test-private-preview-access-code";
+  const speechScript = "Our group meetings should be shorter. Start each meeting with one decision to make.";
   const errors=[];
   const modelCalls=[];
   page.on("pageerror",err=>errors.push(err.message));
   page.on("request",req=>{if(req.url().includes("/api/"))modelCalls.push(req.url())});
   await page.route("**/api/section-plan", async (route) => {
     assert.equal(route.request().headers()["x-ai-demo-code"], previewCode);
-    assert.equal(route.request().postDataJSON().targetSeconds, 180);
+    const input = route.request().postDataJSON();
+    assert.equal(input.targetSeconds, 180);
+    assert.ok(input.script === "" || input.script === speechScript);
     await route.fulfill({ json: {
       sections: [
-        { name: "Intro", seconds: 60, purpose: "", existingIndex: 0 },
+        { name: "Intro", seconds: 60, purpose: "", existingIndex: input.script ? null : 0 },
         { name: "Main idea", seconds: 120, purpose: "Explain the main idea.", existingIndex: null },
       ],
-      replacesExisting: false,
+      replacesExisting: Boolean(input.script),
     } });
   });
   let feedbackRequests = 0;
@@ -66,6 +69,7 @@ try{
     assert.equal(route.request().headers()["x-ai-demo-code"], previewCode);
     const input = route.request().postDataJSON();
     assert.equal(input.mode, "content");
+    assert.equal(input.script, speechScript, "The planner's script should reach the rehearsal feedback request");
     assert.deepEqual(input.sections.map(({ name, transcript }) => [name, transcript]), [
       ["Intro", "Um, we want shorter group meetings. Um, meetings should end with a decision."],
       ["Main idea", "We split every assignment into smaller chunks."],
@@ -95,9 +99,21 @@ try{
   assert.equal(await generate.isEnabled(), false);
   await page.getByText("Enter the code value.", { exact: true }).waitFor();
   await access.fill(previewCode);
+  const estimate = page.getByText("The plan is an estimate without a script.", { exact: true });
+  await estimate.waitFor();
   await generate.click();
-  await page.getByRole("heading", { name: "Suggested plan · 3:00" }).waitFor();
-  await page.getByRole("button", { name: "Apply section plan" }).click();
+  const plan = page.getByRole("heading", { name: "Suggested plan · 3:00" });
+  await plan.waitFor();
+  const scriptField = page.getByRole("textbox", { name: "Speech script (optional)" });
+  await scriptField.fill(speechScript);
+  await plan.waitFor({ state: "hidden" });
+  await estimate.waitFor({ state: "hidden" });
+  await generate.click();
+  await plan.waitFor();
+  await page.getByRole("button", { name: "Replace sections" }).click();
+  const storedScript = await page.waitForFunction(() =>
+    JSON.parse(localStorage.getItem("tick-tock-autosave") ?? "{}")["guest|individual"]?.speechScript);
+  assert.equal(await storedScript.jsonValue(), speechScript);
   await page.getByRole("button",{name:/Review presentation/i}).click();
   console.log("E2E: Ready loaded");
   assert.ok((await page.locator(".history-panel").innerText()).includes("No saved rehearsals"));
@@ -172,7 +188,8 @@ try{
   const extra=await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth);
   assert.ok(extra<=1,"Horizontal overflow: "+extra);
   assert.deepEqual(errors,[],"React/browser page errors");
-  assert.deepEqual(modelCalls.map(url => new URL(url).pathname), ["/api/section-plan", "/api/ai-feedback", "/api/ai-feedback"]);
+  assert.deepEqual(modelCalls.map(url => new URL(url).pathname),
+    ["/api/section-plan", "/api/section-plan", "/api/ai-feedback", "/api/ai-feedback"]);
   console.log("SPRINT4 BROWSER SMOKE PASSED: section plan, saved AI feedback, Present history hint and 390px layout");
 }catch(err){
   console.error("E2E FAILURE:",err);

@@ -69,6 +69,24 @@ test("the five-minute flow validates the time budget and never calls a model wit
   assert.equal(timingOnly.status, 200);
   assert.equal(providerRequests[2].transcript, null);
   assert.deepEqual(timingOnly.body.nextSteps, ["Cut one detail from Intro."]);
+
+  const script = "We will describe the campus shuttle problem. Then we explain the proposed night route.";
+  plan = [
+    { name: "Shuttle problem", purpose: "Explain the wait", seconds: 80 },
+    { name: "Night route", purpose: "Describe the route", seconds: 35 },
+  ];
+  const scriptedPlan = await post(sectionPlan, {
+    targetSeconds: 120, title: "Campus shuttle", sections: [{ name: "Intro", seconds: 120 }], script,
+  });
+  assert.equal(scriptedPlan.status, 200);
+  assert.equal(scriptedPlan.body.replacesExisting, true);
+  assert.deepEqual(scriptedPlan.body.sections.map(({ name }) => name), ["Shuttle problem", "Night route"]);
+  assert.equal(scriptedPlan.body.sections.reduce((sum, item) => sum + item.seconds, 0), 120);
+  assert.ok(scriptedPlan.body.sections[0].seconds > scriptedPlan.body.sections[1].seconds);
+  assert.deepEqual(providerRequests[3], {
+    title: "Campus shuttle", script, sections: [{ name: "Intro", seconds: 120 }],
+    retainExisting: false, secondsToAllocate: 120,
+  });
 });
 
 test("rehearsal feedback resolves citations itself and keeps usable items", async (t) => {
@@ -82,6 +100,7 @@ test("rehearsal feedback resolves citations itself and keeps usable items", asyn
   });
   let calls = 0;
   let temporarilyUnavailable = true;
+  let expectedScript = "";
   const grounded = {
     sectionId: 2, excerptId: 1, quote: "a model-paraphrased quote",
     suggestion: "Name the kind of bug the new test would catch.",
@@ -103,7 +122,8 @@ test("rehearsal feedback resolves citations itself and keeps usable items", asyn
         { id: 2, name: "Approach", actualSeconds: null, targetSeconds: null,
           excerpts: [{ id: 1, text: "It will help us find bugs faster." }] },
       ],
-      optionalOutline: "Approach: describe the test",
+      optionalOutline: expectedScript ? null : "Approach: describe the test",
+      ...(expectedScript ? { optionalScript: expectedScript } : {}),
     });
     if (temporarilyUnavailable) {
       temporarilyUnavailable = false;
@@ -128,6 +148,11 @@ test("rehearsal feedback resolves citations itself and keeps usable items", asyn
   assert.deepEqual(result.body.suggestions, [{
     sectionName: "Approach", quote: "It will help us find bugs faster.", suggestion: grounded.suggestion,
   }]);
+  expectedScript = "The test suite should help the team detect defects sooner and improve coverage.";
+  const withScript = await post(rehearsalFeedback, { ...input, script: expectedScript });
+  assert.equal(withScript.status, 200);
+  assert.deepEqual(withScript.body, result.body);
   returnedSuggestions = [{ ...grounded, excerptId: 11 }];
-  assert.deepEqual(await post(rehearsalFeedback, input), { status: 200, body: { suggestions: [] } });
+  assert.deepEqual(await post(rehearsalFeedback, { ...input, script: expectedScript }),
+    { status: 200, body: { suggestions: [] } });
 });

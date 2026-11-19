@@ -148,11 +148,12 @@ export function FeedbackResults({ feedback }: { feedback: RehearsalFeedback }) {
 }
 
 export function CoachReport({
-  metrics, transcript, outline = "", accessCode, onAccessCodeChange, feedback, onFeedback, rehearsal,
+  metrics, transcript, outline = "", script = "", accessCode, onAccessCodeChange, feedback, onFeedback, rehearsal,
 }: {
   metrics: SpeechMetrics;
   transcript: string;
   outline?: string;
+  script?: string;
   accessCode: string;
   onAccessCodeChange(code: string): void;
   feedback: RehearsalFeedback | undefined;
@@ -190,6 +191,7 @@ export function CoachReport({
         body: JSON.stringify(rehearsal ? {
           mode: "content",
           outline: outline.slice(0, 3000),
+          script: script.trim(),
           sections: rehearsal.sections.filter(({ transcript }) => transcript.trim()).slice(0, 50)
             .map(({ id, name, transcript, actualSeconds, targetSeconds }) => ({
               id, name, actualSeconds, targetSeconds, transcript: transcript.slice(0, 3000),

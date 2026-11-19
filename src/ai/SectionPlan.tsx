@@ -6,11 +6,13 @@ export type PlannedSection = { name: string; purpose: string; seconds: number; e
 type Preview = { sections: PlannedSection[]; replacesExisting: boolean };
 
 export function SectionPlan({
-  target, title, sections, code, onCodeChange, onApply, formatTime,
+  target, title, sections, script, onScriptChange, code, onCodeChange, onApply, formatTime,
 }: {
   target: number;
   title: string;
   sections: ExistingSection[];
+  script: string;
+  onScriptChange(script: string): void;
   code: string;
   onCodeChange(code: string): void;
   onApply(sections: PlannedSection[]): void;
@@ -36,7 +38,7 @@ export function SectionPlan({
         method: "POST", signal: controller.signal,
         headers: { "Content-Type": "application/json", "X-AI-Demo-Code": code.trim() },
         body: JSON.stringify({
-          targetSeconds: target, title: title.trim().slice(0, 160),
+          targetSeconds: target, title: title.trim().slice(0, 160), script: script.trim(),
           sections: sections.map(({ name, target }) => ({ name: name.slice(0, 100), seconds: target })),
         }),
       });
@@ -58,6 +60,16 @@ export function SectionPlan({
   return (
     <details className="speech-coach-remote" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
       <summary>Suggest sections with AI</summary>
+      <label htmlFor="section-plan-script">Speech script (optional)</label>
+      <textarea id="section-plan-script" className="section-plan-script" rows={4}
+        maxLength={12_000} value={script} disabled={loading}
+        aria-describedby={script.trim() ? undefined : "section-plan-estimate"}
+        onChange={(event) => {
+          onScriptChange(event.target.value);
+          setPreview(null);
+          setError("");
+        }} />
+      {!script.trim() && <p id="section-plan-estimate">The plan is an estimate without a script.</p>}
       <PreviewAccessField id="plan-ai-code" code={code} onChange={onCodeChange} />
       <button type="button" onClick={() => { void generate(); }} disabled={loading || code.trim().length < 24}>
         {loading ? "Generating…" : "Generate section plan"}
