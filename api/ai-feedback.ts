@@ -25,18 +25,25 @@ async function reviewContent(data: Record<string, unknown>, res: CoachResponse) 
   });
   if (!spokenSections.length) return res.status(422).json({ error: "Add what you said." });
 
+  const speech = spokenSections.map(({ transcript }) => transcript).join(" ");
+  const letters = speech.match(/\p{L}/gu)?.length ?? 0;
+  const hanCharacters = speech.match(/\p{Script=Han}/gu)?.length ?? 0;
+  const chinese = hanCharacters > letters / 2 && !/[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(speech);
+
   try {
     const parsed = await coachJson({
-      system: "Review what the speaker actually said in this presentation rehearsal. " +
+      system: (chinese ? "请用中文给出建议。引用保留原话，suggestion 字段用中文。 " : "") +
+        "Review what the speaker actually said in this presentation rehearsal. " +
         "Return up to three high-impact content edits, with one item per distinct issue. " +
         "Focus on substance: an unexplained claim, a vague example, an unclear step, or a missing audience action. " +
         "Skip greetings and lines that only need stylistic polish. " +
         "For each item, use its sectionId and copy a short contiguous quote verbatim from that section's transcript. " +
-        "Quote only the words relevant to the issue. Keep their spelling and punctuation as spoken. " +
+        "Quote only the words relevant to the issue. Keep their spelling and punctuation as transcribed. " +
         "Give one short action that improves the substance, with an example when useful. " +
-        "For example, for 'it is useful', ask the speaker to name one problem the tool solves. " +
-        "For 'I split the work', suggest naming two actual tasks. Avoid promotional claims, repeating the quote, " +
-        "or rewriting a sentence with the same meaning. Use the transcript's language. " +
+        (chinese ? "例如，听到「它很有用」，建议说清楚它解决哪个具体问题。 " :
+          "For example, for 'it is useful', ask the speaker to name one problem the tool solves. ") +
+        "Avoid promotional claims, repeating the quote, or rewriting a sentence with the same meaning. " +
+        "Write each suggestion in the same language as its quote. " +
         "Never report how much time was used. Never treat a missing transcript or mention as proof " +
         "the speaker skipped a point. The outline provides context only. Do not invent facts, figures, " +
         "or outcomes. Return an empty list if there is no substantive speech to review. " +
