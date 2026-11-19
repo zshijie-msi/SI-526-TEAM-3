@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { FeedbackResults } from "./CoachUI";
 import type { RehearsalRun } from "./history";
 import { isChineseLanguage } from "./metrics";
 import { historyStats, type SectionHint } from "./historyInsights";
@@ -13,13 +14,14 @@ function date(ts: number): string {
 }
 
 export function SaveRehearsalPanel({
-  saved, savingError, saveTranscript, setSaveTranscript, hasUnsavedFeedback, onSave,
+  saved, savingError, saveTranscript, setSaveTranscript, hasUnsavedFeedback, transcriptPending, onSave,
 }: {
   saved: boolean;
   savingError: string;
   saveTranscript: boolean;
   setSaveTranscript: (value: boolean) => void;
   hasUnsavedFeedback: boolean;
+  transcriptPending: boolean;
   onSave: () => void;
 }) {
   return (
@@ -29,7 +31,8 @@ export function SaveRehearsalPanel({
         <input type="checkbox" checked={saveTranscript} onChange={(e) => setSaveTranscript(e.target.checked)} />
         <span>Include transcript</span>
       </label>
-      <button type="button" onClick={onSave} className="history-primary">{saved ? "Update saved rehearsal" : "Save rehearsal to history"}</button>
+      <button type="button" onClick={onSave} disabled={transcriptPending}
+        className="history-primary">{saved ? "Update saved rehearsal" : "Save rehearsal to history"}</button>
       {saved && <p role="status" className="history-good">{hasUnsavedFeedback ? "New feedback available" : "Saved on this device"}</p>}
       {savingError && <p role="alert" className="history-warning">{savingError}</p>}
     </section>
@@ -100,13 +103,10 @@ export function HistoryPanel({
                         )}
                       </div>
                     ))}
-                    {run.feedback?.summary && (
+                    {run.feedback && (
                       <div className="history-saved-feedback">
                         <h4>AI rehearsal feedback</h4>
-                        <p className="history-record-text">{run.feedback.summary}</p>
-                        {Array.isArray(run.feedback.nextSteps) && (
-                          <ul>{run.feedback.nextSteps.map((step, index) => <li key={index}>{step}</li>)}</ul>
-                        )}
+                        <FeedbackResults feedback={run.feedback} />
                       </div>
                     )}
                     <button type="button" className="history-delete" onClick={() => {

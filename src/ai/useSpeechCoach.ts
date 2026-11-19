@@ -32,10 +32,12 @@ function recognitionConstructor(): (new () => Recognition) | undefined {
 
 export function useSpeechCoach({
   active,
+  rehearsing,
   sectionId,
   totalElapsed,
 }: {
   active: boolean;
+  rehearsing: boolean;
   sectionId: number;
   totalElapsed: number;
 }) {
@@ -50,17 +52,31 @@ export function useSpeechCoach({
   const [interim, setInterim] = useState("");
   const [error, setError] = useState("");
   const [listening, setListening] = useState(false);
+  const [transcriptPending, setTranscriptPending] = useState(false);
+  const [restartRevision, setRestartRevision] = useState(0);
+  const captureRevision = useRef(0);
+  const runRevision = useRef(0);
+  const draining = useRef<Promise<void> | null>(null);
   const latest = useRef({ sectionId, totalElapsed });
   latest.current = { sectionId, totalElapsed };
+  const rehearsalSection = rehearsing ? sectionId : null;
 
   const available = provider === "browser"
     ? Boolean(recognitionConstructor()) : relayConfigured;
   const reset = () => {
+    runRevision.current++;
     setEnabled(false);
     setSegments([]);
     setInterim("");
     setError("");
     setListening(false);
+    setTranscriptPending(false);
+  };
+  const restartSection = () => {
+    captureRevision.current++;
+    setRestartRevision(captureRevision.current);
+    setSegments((current) => current.filter((segment) => segment.sectionId !== sectionId));
+    setInterim("");
   };
 
   useEffect(() => {
@@ -79,13 +95,17 @@ export function useSpeechCoach({
     let disposed = false;
     let restartTimer: number | null = null;
     let stopForError = false;
+    let started = false;
+    let finishCapture: (() => void) | undefined;
+    const captureRun = runRevision.current;
+    const sameRun = () => captureRun === runRevision.current;
     const recognition = new Constructor();
     recognition.lang = language;
     recognition.continuous = true;
     recognition.interimResults = true;
 
     recognition.onresult = (event) => {
-      if (disposed) return;
+      if (disposed || !sameRun() || (rehearsalSection !== null && captureRevision.current !== restartRevision)) return;
       const finalParts: SpeechSegment[] = [];
       let interimPart = "";
       for (let i = event.resultIndex; i < event.results.length; i += 1) {
@@ -95,7 +115,7 @@ export function useSpeechCoach({
         if (result.isFinal) {
           finalParts.push({
             text: words,
-            sectionId: latest.current.sectionId,
+            sectionId: rehearsalSection ?? latest.current.sectionId,
             atSecond: latest.current.totalElapsed,
             language,
           });
@@ -108,7 +128,7 @@ export function useSpeechCoach({
     };
 
     recognition.onerror = (event) => {
-      if (disposed) return;
+      if (disposed || finishCapture || !sameRun()) return;
       if (event.error === "no-speech" || event.error === "aborted") return;
       if (event.error === "not-allowed" || event.error === "service-not-allowed") {
         stopForError = true;
@@ -122,9 +142,10 @@ export function useSpeechCoach({
     };
 
     const start = () => {
-      if (disposed || stopForError) return;
+      if (disposed || stopForError || !sameRun()) return;
       try {
         recognition.start();
+        started = true;
         setListening(true);
         setError("");
       } catch {
@@ -133,21 +154,57 @@ export function useSpeechCoach({
     };
 
     recognition.onend = () => {
+      started = false;
+      if (finishCapture) {
+        finishCapture();
+        return;
+      }
       setListening(false);
       setInterim("");
       if (!disposed && !stopForError) restartTimer = window.setTimeout(start, 700);
     };
 
-    start();
-    return () => {
+    if (rehearsalSection !== null && draining.current) {
+      void draining.current.then(start);
+    } else {
+      start();
+    }
+    const detach = () => {
       disposed = true;
-      if (restartTimer !== null) window.clearTimeout(restartTimer);
       recognition.onend = null;
       recognition.onresult = null;
       recognition.onerror = null;
-      try { recognition.stop(); } catch { /* Browser already stopped. */ }
     };
-  }, [enabled, active, language, provider]);
+    return () => {
+      if (restartTimer !== null) window.clearTimeout(restartTimer);
+      if (rehearsalSection === null || !started) {
+        detach();
+        if (started) {
+          try { recognition.stop(); } catch { /* Browser already stopped. */ }
+        }
+        return;
+      }
+
+      // Await the final result for this section before opening another recognizer.
+      // The timer stays responsive even if the browser never reports an end event.
+      if (sameRun()) {
+        setTranscriptPending(true);
+        setListening(false);
+        setInterim("");
+      }
+      let resolveDrain: () => void = () => {};
+      draining.current = new Promise<void>((resolve) => { resolveDrain = resolve; });
+      const timeout = window.setTimeout(() => finishCapture?.(), 1500);
+      finishCapture = () => {
+        window.clearTimeout(timeout);
+        detach();
+        draining.current = null;
+        if (sameRun()) setTranscriptPending(false);
+        resolveDrain();
+      };
+      try { recognition.stop(); } catch { finishCapture(); }
+    };
+  }, [enabled, active, language, provider, rehearsalSection, restartRevision]);
 
   useEffect(() => {
     if (!enabled || !active || provider !== "qwen") return;
@@ -197,6 +254,8 @@ export function useSpeechCoach({
     listening,
     error,
     segments,
+    transcriptPending,
+    restartSection,
     interim,
     reset,
     transcript: segments.map((segment) => segment.text).join(" "),

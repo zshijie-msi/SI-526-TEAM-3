@@ -70,3 +70,54 @@ test("the five-minute flow validates the time budget and never calls a model wit
   assert.equal(providerRequests[2].transcript, null);
   assert.deepEqual(timingOnly.body.nextSteps, ["Cut one detail from Intro."]);
 });
+
+test("rehearsal content feedback needs speech and accepts only supported quotes", async (t) => {
+  process.env.AI_FEEDBACK_ENABLED = "true";
+  process.env.AI_DEMO_ACCESS_CODE = accessCode;
+  process.env.AI_GATEWAY_API_KEY = "test-key";
+  t.after(() => {
+    delete process.env.AI_FEEDBACK_ENABLED;
+    delete process.env.AI_DEMO_ACCESS_CODE;
+    delete process.env.AI_GATEWAY_API_KEY;
+  });
+  let calls = 0;
+  const grounded = {
+    sectionId: 2, quote: "find bugs faster",
+    suggestion: "Name the kind of bug the new test would catch.",
+  };
+  let returnedSuggestions = [
+    { ...grounded, sectionId: 1 },
+    { ...grounded, suggestion: "nextSteps: [some malformed markup]" },
+    grounded,
+  ];
+  t.mock.method(globalThis, "fetch", async (_url, request) => {
+    calls++;
+    const input = JSON.parse(JSON.parse(request.body).messages[1].content);
+    assert.deepEqual(input, {
+      sections: [
+        { id: 1, name: "Intro", transcript: "This is our team's new test suite." },
+        { id: 2, name: "Approach", transcript: "It will help us find bugs faster." },
+      ],
+      optionalOutline: "Approach: describe the test",
+    });
+    return Response.json({ choices: [{ message: { content: JSON.stringify({ suggestions: returnedSuggestions }) } }] });
+  });
+
+  const input = {
+    mode: "content", outline: "Approach: describe the test", sections: [
+      { id: 1, name: "Intro", transcript: "This is our team's new test suite.", actual: 12, target: 20 },
+      { id: 2, name: "Approach", transcript: "It will help us find bugs faster." },
+      { id: 3, name: "Close", transcript: "" },
+    ],
+  };
+  const empty = await post(rehearsalFeedback, { ...input, sections: [input.sections[2]] });
+  assert.equal(empty.status, 422);
+  assert.equal(calls, 0);
+  const result = await post(rehearsalFeedback, input);
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body.suggestions, [{
+    sectionName: "Approach", quote: grounded.quote, suggestion: grounded.suggestion,
+  }]);
+  returnedSuggestions = [{ ...grounded, quote: "invented quote" }];
+  assert.equal((await post(rehearsalFeedback, input)).status, 502);
+});

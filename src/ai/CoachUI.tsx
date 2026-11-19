@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { PreviewAccessField } from "./PreviewAccessField";
-import type { RehearsalFeedback } from "./history";
+import type { ContentFeedback, RehearsalFeedback } from "./history";
 import { LiveAnalysisControls, type LiveAnalysisUIProps } from "./LiveUI";
 import { localSuggestions, type SpeechMetrics } from "./metrics";
 import "./coach.css";
@@ -124,8 +124,30 @@ export function CoachDock({
   );
 }
 
+export function FeedbackResults({ feedback }: { feedback: RehearsalFeedback }) {
+  if ("suggestions" in feedback) {
+    return (
+      <ul className="content-feedback">
+        {feedback.suggestions.map(({ sectionName, quote, suggestion }, index) => (
+          <li key={index}>
+            <strong>{sectionName}</strong>
+            {quote && <q>{quote}</q>}
+            <p>{suggestion}</p>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  return (
+    <>
+      <p>{feedback.summary.split(/\bnextSteps\s*:/i, 1)[0].trim()}</p>
+      <ul>{feedback.nextSteps.map((item, index) => <li key={index}>{item}</li>)}</ul>
+    </>
+  );
+}
+
 export function CoachReport({
-  metrics, transcript, outline = "", accessCode, onAccessCodeChange, feedback, onFeedback,
+  metrics, transcript, outline = "", accessCode, onAccessCodeChange, feedback, onFeedback, rehearsal,
 }: {
   metrics: SpeechMetrics;
   transcript: string;
@@ -133,7 +155,12 @@ export function CoachReport({
   accessCode: string;
   onAccessCodeChange(code: string): void;
   feedback: RehearsalFeedback | undefined;
-  onFeedback(feedback: RehearsalFeedback): void;
+  onFeedback(feedback: RehearsalFeedback | undefined): void;
+  rehearsal?: {
+    sections: Array<{ id: number; name: string; transcript: string }>;
+    transcriptPending: boolean;
+    onTranscriptChange(id: number, transcript: string): void;
+  };
 }) {
   const [showTranscript, setShowTranscript] = useState(false);
   const [remoteLoading, setRemoteLoading] = useState(false);
@@ -141,8 +168,11 @@ export function CoachReport({
   const request = useRef<AbortController | null>(null);
   useEffect(() => () => request.current?.abort(), []);
   const remoteVisible = import.meta.env.VITE_AI_PAID_REVIEW_ENABLED === "true";
-  const hasTiming = metrics.sections.some((section) => section.actual > 0);
-  const canRequestReview = hasTiming && accessCode.trim().length >= 24 && !remoteLoading;
+  const hasTranscript = rehearsal?.sections.some(({ transcript }) => /[\p{L}\p{N}]{2}/u.test(transcript));
+  const hasReviewInput = rehearsal
+    ? hasTranscript && !rehearsal.transcriptPending
+    : metrics.sections.some((section) => section.actual > 0);
+  const canRequestReview = hasReviewInput && accessCode.trim().length >= 24 && !remoteLoading;
 
   const requestRemoteReview = async () => {
     if (!canRequestReview || request.current) return;
@@ -155,27 +185,39 @@ export function CoachReport({
         method: "POST",
         signal: controller.signal,
         headers: { "Content-Type": "application/json", "X-AI-Demo-Code": accessCode.trim() },
-        body: JSON.stringify({
+        body: JSON.stringify(rehearsal ? {
+          mode: "content",
+          outline: outline.slice(0, 3000),
+          sections: rehearsal.sections.filter(({ transcript }) => transcript.trim()).slice(0, 50)
+            .map(({ id, name, transcript }) => ({ id, name, transcript: transcript.slice(0, 3000) })),
+        } : {
           transcript: transcript.slice(0, 8000),
           outline: outline.slice(0, 3000),
           wordsPerMinute: metrics.wpm,
           sections: metrics.sections,
         }),
       });
-      const result = await response.json() as {
+      const result = await response.json() as Partial<ContentFeedback> & {
         summary?: string; nextSteps?: string[]; error?: string;
       };
       if (!response.ok) throw new Error(result.error || "Feedback request failed.");
-      if (!result.summary) throw new Error("No usable feedback was returned.");
       if (controller.signal.aborted) return;
-      onFeedback({ summary: result.summary, nextSteps: result.nextSteps || [] });
+      if (rehearsal && result.suggestions?.length) {
+        onFeedback({ suggestions: result.suggestions });
+      } else if (!rehearsal && result.summary) {
+        onFeedback({ summary: result.summary, nextSteps: result.nextSteps || [] });
+      } else {
+        throw new Error("No usable feedback was returned.");
+      }
     } catch (cause) {
       if (!controller.signal.aborted) {
         setRemoteError(cause instanceof Error ? cause.message : "Feedback is unavailable.");
       }
     } finally {
-      request.current = null;
-      if (!controller.signal.aborted) setRemoteLoading(false);
+      if (request.current === controller) {
+        request.current = null;
+        if (!controller.signal.aborted) setRemoteLoading(false);
+      }
     }
   };
 
@@ -198,17 +240,43 @@ export function CoachReport({
           </div>
         ))}
       </div>
-      <h3>Pacing tips</h3>
-      <ul>{localSuggestions(metrics).map((tip) => <li key={tip}>{tip}</li>)}</ul>
-      <button className="speech-coach-transcript-toggle" type="button"
+      {!rehearsal && <>
+        <h3>Pacing tips</h3>
+        <ul>{localSuggestions(metrics).map((tip) => <li key={tip}>{tip}</li>)}</ul>
+      </>}
+      {!rehearsal && <button className="speech-coach-transcript-toggle" type="button"
         aria-expanded={showTranscript} onClick={() => setShowTranscript((value) => !value)}>
         {showTranscript ? "Hide" : "View"} transcript
-      </button>
-      {showTranscript && <p className="speech-coach-report-transcript">{transcript}</p>}
+      </button>}
+      {!rehearsal && showTranscript && <p className="speech-coach-report-transcript">{transcript}</p>}
       </>}
       {remoteVisible && (
         <div className="speech-coach-remote">
           <h2>AI rehearsal feedback</h2>
+          {rehearsal && (
+            <>
+              <details className="rehearsal-transcript">
+                <summary>{hasTranscript ? "Review transcript" : "Add transcript"}</summary>
+                {rehearsal.sections.map(({ id, name, transcript }) => (
+                  <label key={id}>
+                    {name}
+                    <textarea rows={3} maxLength={3000} value={transcript} disabled={rehearsal.transcriptPending}
+                      onChange={(event) => {
+                        request.current?.abort();
+                        request.current = null;
+                        setRemoteLoading(false);
+                        setRemoteError("");
+                        onFeedback(undefined);
+                        rehearsal.onTranscriptChange(id, event.target.value);
+                      }} />
+                  </label>
+                ))}
+              </details>
+              {rehearsal.transcriptPending
+                ? <p role="status">Finishing transcript…</p>
+                : !hasTranscript && <p>No speech captured. Add what you said.</p>}
+            </>
+          )}
           <PreviewAccessField id="coach-demo-code" code={accessCode} onChange={onAccessCodeChange} />
           <button type="button" onClick={() => { void requestRemoteReview(); }}
             disabled={!canRequestReview}>
@@ -217,8 +285,7 @@ export function CoachReport({
           {remoteError && <p role="alert">{remoteError}</p>}
           {feedback && (
             <div className="speech-coach-remote-results">
-              <p>{feedback.summary}</p>
-              <ul>{feedback.nextSteps.map((item, i) => <li key={i}>{item}</li>)}</ul>
+              <FeedbackResults feedback={feedback} />
             </div>
           )}
         </div>

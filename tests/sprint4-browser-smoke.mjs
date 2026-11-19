@@ -20,12 +20,21 @@ try{
   browser=await chromium.launch({headless:true,args:["--no-sandbox"]});
   const context=await browser.newContext({viewport:{width:390,height:844},permissions:["microphone"]});
   await context.addInitScript(()=>{
+    let recognitionCount = 0;
     class MockSpeechRecognition {
-      constructor(){this.lang="en-US";this.onresult=null;this.onend=null;this.onerror=null;this.timer=null;}
-      start(){this.timer=setTimeout(()=>this.onresult?.({
-        resultIndex:0,results:[{isFinal:true,0:{transcript:"Hello everyone this is a short presentation about our school project."}}],
-      }),350)}
-      stop(){clearTimeout(this.timer);this.onend?.();}
+      constructor(){
+        this.lang = "en-US";
+        this.transcript = ++recognitionCount % 2
+          ? "We want to make our group meetings better."
+          : "We split every assignment into smaller chunks.";
+      }
+      start(){window.startedRehearsalSections = (window.startedRehearsalSections ?? 0) + 1;}
+      stop(){
+        setTimeout(() => {
+          this.onresult?.({ resultIndex: 0, results: [{ isFinal: true, 0: { transcript: this.transcript } }] });
+          this.onend?.();
+        }, 180);
+      }
     }
     window.SpeechRecognition=MockSpeechRecognition;
     window.webkitSpeechRecognition=MockSpeechRecognition;
@@ -51,7 +60,16 @@ try{
   });
   await page.route("**/api/ai-feedback", async (route) => {
     assert.equal(route.request().headers()["x-ai-demo-code"], previewCode);
-    await route.fulfill({ json: { summary: "Intro ran short.", nextSteps: ["Add one example."] } });
+    const input = route.request().postDataJSON();
+    assert.equal(input.mode, "content");
+    assert.deepEqual(input.sections.map(({ name, transcript }) => [name, transcript]), [
+      ["Intro", "We want shorter group meetings."],
+      ["Main idea", "We split every assignment into smaller chunks."],
+    ]);
+    await route.fulfill({ json: { suggestions: [{
+      sectionName: "Intro", quote: "shorter group meetings",
+      suggestion: "Name the decision each meeting should end with.",
+    }] } });
   });
   await page.goto(origin);
   console.log("E2E: home loaded");
@@ -72,8 +90,6 @@ try{
   await generate.click();
   await page.getByRole("heading", { name: "Suggested plan · 3:00" }).waitFor();
   await page.getByRole("button", { name: "Apply section plan" }).click();
-  await page.getByRole("button", { name: "Delete Main idea" }).click();
-  await page.getByLabel(/overall.*minutes/i).fill("");
   await page.getByRole("button",{name:/Review presentation/i}).click();
   console.log("E2E: Ready loaded");
   assert.ok((await page.locator(".history-panel").innerText()).includes("No saved rehearsals"));
@@ -83,28 +99,46 @@ try{
   const run=async(i)=>{
     console.log("E2E: rehearsal "+i+" starting");
     await page.getByRole("button",{name:/Rehearse/i}).first().click();
-    await page.getByRole("button",{name:/Speech Coach/i}).first().click();
-    await page.getByRole("button",{name:/Enable microphone/i}).click();
-    await sleep(900);
+    if (i === 1) {
+      await page.getByRole("button",{name:/Speech Coach/i}).first().click();
+      await page.getByRole("button",{name:/Enable microphone/i}).click();
+      await page.getByText("Waiting for speech…", { exact: true }).waitFor();
+    }
+    await page.getByRole("button",{name:"Next section",exact:true}).click();
+    if (i === 1) await page.waitForFunction(() => window.startedRehearsalSections === 2);
     await page.getByRole("button",{name:"Finish",exact:true}).click();
     console.log("E2E: rehearsal "+i+" finished");
     const copy = await page.locator("body").innerText();
     assert.doesNotMatch(copy, /Sends section timing|This is a local-only record|Your saved runs are used|Save setup only stores|Save setup keeps/);
-    assert.ok((await page.locator("body").innerText()).includes("Speaking pace"),"Missing speech coach report in rehearsal "+i);
     if (i === 1) {
+      await page.getByRole("heading", { name: "Speaking pace" }).waitFor();
+      await page.getByText("Review transcript", { exact: true }).click();
+      const intro = page.getByRole("textbox", { name: "Intro", exact: true });
+      assert.equal(await intro.inputValue(), "We want to make our group meetings better.");
+      const mainIdea = page.getByRole("textbox", { name: "Main idea", exact: true });
+      await mainIdea.waitFor();
+      await page.waitForFunction(() => document.querySelectorAll(".rehearsal-transcript textarea")[1]?.value
+        === "We split every assignment into smaller chunks.");
+      await intro.fill("We want shorter group meetings.");
       await page.getByRole("button", { name: "Generate AI feedback" }).click();
-      await page.getByText("Add one example.", { exact: true }).waitFor();
+      await page.getByText("Name the decision each meeting should end with.", { exact: true }).waitFor();
+      await page.getByText("shorter group meetings", { exact: true }).waitFor();
+    } else {
+      assert.equal(await page.getByRole("button", { name: "Generate AI feedback" }).isEnabled(), false);
+      await page.getByText("No speech captured. Add what you said.", { exact: true }).waitFor();
     }
     await page.getByRole("button",{name:/Save rehearsal to history/i}).click();
     const records=await page.evaluate(()=>JSON.parse(localStorage.getItem("tick-tock-ai-rehearsal-history-v1")||"[]"));
     assert.equal(records.length,i,"Wrong saved rehearsal count");
     assert.ok(records.every(r=>!r.transcriptSaved),"Transcript must be opt-in");
     if (i === 1) {
-      assert.equal(records[0].feedback.nextSteps[0], "Add one example.");
+      assert.deepEqual(records[0].feedback.suggestions, [{
+        sectionName: "Intro", suggestion: "Name the decision each meeting should end with.",
+      }]);
       await page.getByRole("button", { name: "View history" }).click();
       const savedSession = page.locator(".history-runs > details > summary").first();
       await savedSession.click();
-      await page.locator(".history-saved-feedback").getByText("Add one example.").waitFor();
+      await page.locator(".history-saved-feedback").getByText("Name the decision each meeting should end with.").waitFor();
     } else {
       assert.equal(records[0].feedback, undefined, "A new run must not inherit the previous feedback");
     }

@@ -136,6 +136,24 @@
 }
 .speech-coach-remote button:disabled { opacity: .55; cursor: not-allowed; }
 .speech-coach-remote-results { margin-top: 12px; border-top: 1px solid #dce7e7; }
+.rehearsal-transcript { margin: 10px 0; }
+.rehearsal-transcript summary { cursor: pointer; font-size: 13px; font-weight: 650; }
+.rehearsal-transcript textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 4px;
+  padding: 8px;
+  border: 1px solid #becbce;
+  border-radius: 8px;
+  font: inherit;
+  resize: vertical;
+}
+.content-feedback { margin: 0; padding: 0; list-style: none; }
+.content-feedback li { padding: 10px 0; overflow-wrap: anywhere; }
+.content-feedback li + li { border-top: 1px solid #dce7e7; }
+.content-feedback q { display: block; margin-top: 3px; color: #576774; }
+.content-feedback li p { margin: 4px 0 0; color: inherit; font-size: inherit; }
 
 .speech-coach-language {
   display: grid;

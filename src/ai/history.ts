@@ -19,10 +19,16 @@ export interface HistoricalSection {
   transcript?: string;
 }
 
-export interface RehearsalFeedback {
+interface TimingFeedback {
   summary: string;
   nextSteps: string[];
 }
+
+export interface ContentFeedback {
+  suggestions: Array<{ sectionName: string; quote?: string; suggestion: string }>;
+}
+
+export type RehearsalFeedback = TimingFeedback | ContentFeedback;
 
 export interface RehearsalRun {
   id: string;
@@ -55,9 +61,13 @@ export function createRehearsalRun(input: {
   metrics: SpeechMetrics;
   duration: number;
   includeTranscript: boolean;
+  transcriptEdits?: Partial<Record<number, string>>;
   feedback?: RehearsalFeedback;
   now?: number;
 }): RehearsalRun {
+  const feedback = input.feedback && "suggestions" in input.feedback && !input.includeTranscript
+    ? { suggestions: input.feedback.suggestions.map(({ sectionName, suggestion }) => ({ sectionName, suggestion })) }
+    : input.feedback;
   return {
     id: input.id,
     presentationId: input.presentationId,
@@ -68,10 +78,10 @@ export function createRehearsalRun(input: {
     duration: finiteSeconds(input.duration),
     language: input.metrics.language,
     transcriptSaved: input.includeTranscript,
-    ...(input.feedback ? { feedback: input.feedback } : {}),
+    ...(feedback ? { feedback } : {}),
     sections: input.timedSections.slice(0, 50).map((section) => {
       const metrics = input.metrics.sections.find((entry) => entry.id === section.id);
-      const words = input.segments
+      const words = input.transcriptEdits?.[section.id] ?? input.segments
         .filter((entry) => entry.sectionId === section.id)
         .map((entry) => entry.text)
         .join(" ");

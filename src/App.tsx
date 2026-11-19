@@ -547,6 +547,8 @@ export default function App() {
   const [historyRuns, setHistoryRuns] = useState(() => readHistory(window.localStorage));
   const [saveHistoryTranscript, setSaveHistoryTranscript] = useState(false);
   const [rehearsalFeedback, setRehearsalFeedback] = useState<RehearsalFeedback>();
+  const [rehearsalTranscriptEdits, setRehearsalTranscriptEdits] = useState<Partial<Record<number, string>>>({});
+  const savedRehearsalFeedback = useRef<RehearsalFeedback>(undefined);
   const [savedHistoryRunId, setSavedHistoryRunId] = useState<string | null>(null);
   const [historySaveError, setHistorySaveError] = useState("");
   const [historyHintsEnabled, setHistoryHintsEnabled] = useState(true);
@@ -579,6 +581,7 @@ export default function App() {
   // external model can pause the independent performance.now() clock.
   const speechCoach = useSpeechCoach({
     active: isRunning && (screen === "rehearse" || screen === "present"),
+    rehearsing: screen === "rehearse",
     sectionId: sections[activeIndex]?.id ?? -1,
     totalElapsed,
   });
@@ -914,6 +917,8 @@ export default function App() {
     liveFeedback.reset();
     setCurrentRehearsalId(makeId());
     setRehearsalFeedback(undefined);
+    setRehearsalTranscriptEdits({});
+    savedRehearsalFeedback.current = undefined;
     setSavedHistoryRunId(null);
     setSaveHistoryTranscript(false);
     setHistorySaveError("");
@@ -1018,6 +1023,7 @@ export default function App() {
   };
 
   const restartCurrentSection = () => {
+    if (screen === "rehearse") speechCoach.restartSection();
     const { totalMs, sectionMs } = snapshot();
     const preservedTotal = Math.max(0, totalMs - sectionMs);
     clock.current = { totalMs: preservedTotal, sectionMs: 0, since: isRunning ? performance.now() : null };
@@ -1119,6 +1125,7 @@ export default function App() {
       metrics,
       duration: totalElapsed,
       includeTranscript: saveHistoryTranscript,
+      transcriptEdits: rehearsalTranscriptEdits,
       feedback: rehearsalFeedback,
     });
     const next = upsertHistory(historyRuns, run);
@@ -1127,6 +1134,7 @@ export default function App() {
       return;
     }
     setHistoryRuns(next);
+    savedRehearsalFeedback.current = rehearsalFeedback;
     setSavedHistoryRunId(run.id);
     setHistorySaveError("");
   };
@@ -2739,6 +2747,11 @@ export default function App() {
   }
 
   const actualTotal = actualTimes.reduce((total, value) => total + (value || 0), 0);
+  const rehearsalTranscripts = sections.slice(0, rehearsalIncomplete ? rehearsalEndIndex + 1 : sections.length)
+    .map(({ id, name }) => ({
+      id, name, transcript: rehearsalTranscriptEdits[id] ?? speechCoach.segments
+        .filter((segment) => segment.sectionId === id).map((segment) => segment.text).join(" "),
+    }));
   const totalDifference = actualTotal - totalTarget;
   // Only sections that were fully finished are compared against their targets.
   const finishedCount = rehearsalIncomplete ? rehearsalEndIndex : sections.length;
@@ -2800,12 +2813,18 @@ export default function App() {
 
         <CoachReport key={currentRehearsalId} metrics={speechMetrics} transcript={speechCoach.transcript} outline={coachOutline}
           accessCode={aiAccessCode} onAccessCodeChange={setAiAccessCode}
-          feedback={rehearsalFeedback} onFeedback={setRehearsalFeedback} />
+          feedback={rehearsalFeedback} onFeedback={setRehearsalFeedback}
+          rehearsal={{
+            sections: rehearsalTranscripts,
+            transcriptPending: speechCoach.transcriptPending,
+            onTranscriptChange: (id, transcript) =>
+              setRehearsalTranscriptEdits((current) => ({ ...current, [id]: transcript })),
+          }} />
         <SaveRehearsalPanel saved={savedHistoryRunId === currentRehearsalId}
           savingError={historySaveError} saveTranscript={saveHistoryTranscript}
           setSaveTranscript={setSaveHistoryTranscript} onSave={saveRehearsalHistory}
-          hasUnsavedFeedback={Boolean(rehearsalFeedback &&
-            presentationHistory.find((run) => run.id === currentRehearsalId)?.feedback !== rehearsalFeedback)} />
+          transcriptPending={speechCoach.transcriptPending}
+          hasUnsavedFeedback={Boolean(rehearsalFeedback && savedRehearsalFeedback.current !== rehearsalFeedback)} />
         <HistoryPanel runs={presentationHistory} hints={historyHints}
           onDelete={deleteHistoryRun} onClear={clearPresentationHistory} compact />
         {presentationMode === "group" && (
