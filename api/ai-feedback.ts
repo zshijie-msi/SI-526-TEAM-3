@@ -1,5 +1,5 @@
 import {
-  checkPilot, coachError, coachJson, coachModelReady, readBody,
+  checkPilot, coachError, coachJson, coachModelReady, CoachModelError, readBody,
   type CoachRequest, type CoachResponse,
 } from "../server/coach-model.js";
 
@@ -31,7 +31,7 @@ async function reviewContent(data: Record<string, unknown>, res: CoachResponse) 
   const chinese = hanCharacters > letters / 2 && !/[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(speech);
 
   try {
-    const parsed = await coachJson({
+    const generate = () => coachJson({
       system: (chinese ? "请用中文给出建议。引用保留原话，suggestion 字段用中文。 " : "") +
         "Review what the speaker actually said in this presentation rehearsal. " +
         "Return up to three high-impact content edits, with one item per distinct issue. " +
@@ -59,6 +59,12 @@ async function reviewContent(data: Record<string, unknown>, res: CoachResponse) 
         } } },
       },
       maxTokens: 560,
+    });
+    const parsed = await generate().catch((error: unknown) => {
+      if (error instanceof CoachModelError && [502, 503, 504].includes(error.providerStatus)) {
+        return generate();
+      }
+      throw error;
     });
     if (!Array.isArray(parsed.suggestions)) {
       return res.status(502).json({ error: "Couldn’t generate content feedback. Try again." });

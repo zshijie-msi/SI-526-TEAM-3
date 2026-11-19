@@ -81,6 +81,7 @@ test("rehearsal content feedback needs speech and accepts only supported quotes"
     delete process.env.AI_GATEWAY_API_KEY;
   });
   let calls = 0;
+  let temporarilyUnavailable = true;
   const grounded = {
     sectionId: 2, quote: "find bugs faster",
     suggestion: "Name the kind of bug the new test would catch.",
@@ -100,6 +101,10 @@ test("rehearsal content feedback needs speech and accepts only supported quotes"
       ],
       optionalOutline: "Approach: describe the test",
     });
+    if (temporarilyUnavailable) {
+      temporarilyUnavailable = false;
+      return Response.json({ error: { code: "service_unavailable_error" } }, { status: 503 });
+    }
     return Response.json({ choices: [{ message: { content: JSON.stringify({ suggestions: returnedSuggestions }) } }] });
   });
 
@@ -115,6 +120,7 @@ test("rehearsal content feedback needs speech and accepts only supported quotes"
   assert.equal(calls, 0);
   const result = await post(rehearsalFeedback, input);
   assert.equal(result.status, 200);
+  assert.equal(calls, 2);
   assert.deepEqual(result.body.suggestions, [{
     sectionName: "Approach", quote: grounded.quote, suggestion: grounded.suggestion,
   }]);
