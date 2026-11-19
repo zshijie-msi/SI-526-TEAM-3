@@ -89,6 +89,7 @@ test("rehearsal feedback resolves citations itself and keeps usable items", asyn
   let returnedSuggestions = [
     { ...grounded, excerptId: 11 },
     { ...grounded, suggestion: "nextSteps: [some malformed markup]" },
+    { ...grounded, suggestion: "Say detect defects sooner to align with the optional outline." },
     grounded,
   ];
   t.mock.method(globalThis, "fetch", async (_url, request) => {
