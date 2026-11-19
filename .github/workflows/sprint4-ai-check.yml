@@ -1,0 +1,53 @@
+name: Sprint 4 AI Coach checks
+
+on:
+  push:
+    branches:
+      - feature/sprint-4
+  pull_request:
+
+# Only the newest branch build needs full browser verification.
+concurrency:
+  group: sprint4-ai-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck-build-and-mock-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install app dependencies
+        run: npm install --no-audit --no-fund
+      - name: Typecheck and production build
+        run: npm run build
+      - name: Typecheck API adapters
+        run: npx tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --types node --skipLibCheck --allowJs --checkJs api/*.ts
+      - name: Test pacing, history and mock live feedback
+        run: node --experimental-strip-types --test tests/*.test.mjs
+      - name: Install private relay dependencies
+        working-directory: services/qwen-asr-relay
+        run: npm ci --no-audit --no-fund
+      - name: Test mock Qwen relay (no external API)
+        working-directory: services/qwen-asr-relay
+        run: npm test
+
+  browser-ui-smoke:
+    runs-on: ubuntu-latest
+    # GitHub's ubuntu-latest is 26.04; Playwright 1.58 cannot install
+    # Chromium dependencies there. Use the official pinned 24.04 image.
+    container:
+      image: mcr.microsoft.com/playwright:v1.58.2-noble
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install app and test-only Playwright
+        run: |
+          npm install --no-audit --no-fund
+          npm install --no-save --no-audit --no-fund playwright@1.58.2
+      - name: End-to-end mobile-size rehearsal and Present check
+        run: node tests/sprint4-browser-smoke.mjs

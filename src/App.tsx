@@ -1,6 +1,16 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import tickTockIcon from "./assets/tick-tock-icon.png";
 import tickTockWordmark from "./assets/tick-tock-wordmark.png";
+import { CoachDock, CoachReport } from "./ai/CoachUI";
+import { countSpeechUnits, livePaceCue, presentPaceCue, summarizeSpeech } from "./ai/metrics";
+import { useSpeechCoach } from "./ai/useSpeechCoach";
+import { buildSpeechFeedback } from "./ai/speechFeedback";
+import { createRehearsalRun, historyForPresentation, historyOwner, readHistory, upsertHistory, writeHistory, type RehearsalFeedback } from "./ai/history";
+import { buildHistoryHints, liveRehearsalContext } from "./ai/historyInsights";
+import { HistoryPanel, SaveRehearsalPanel } from "./ai/HistoryUI";
+import { LiveCueToggle } from "./ai/LiveUI";
+import { useLiveFeedback } from "./ai/useLiveFeedback";
+import { SectionPlan } from "./ai/SectionPlan";
 
 type Section = {
   id: number;
@@ -21,8 +31,6 @@ type Screen =
   | "present"
   | "presentation-summary";
 type PresentationMode = "individual" | "group";
-type DisplayStyle = "minimal" | "standard" | "detailed";
-type ColorMode = "muted" | "bright";
 type Account = {
   name: string;
   email: string;
@@ -36,11 +44,7 @@ type SavedPresentation = {
   sections: Section[];
   presentationTarget?: number;
   speakers: string[];
-  displayStyle: DisplayStyle;
-  colorMode: ColorMode;
-  hapticsEnabled: boolean;
-  // Quiet Present view: hides times and ahead/behind status while presenting.
-  quietMode?: boolean;
+  speechScript?: string;
 };
 // Story 12 (SCRUM-133): one autosaved draft per mode, per profile (guest included).
 type AutosaveDraft = {
@@ -52,10 +56,8 @@ type AutosaveDraft = {
   sections: Section[];
   presentationTarget?: number;
   speakers: string[];
-  displayStyle: DisplayStyle;
-  colorMode: ColorMode;
-  hapticsEnabled: boolean;
-  quietMode?: boolean;
+  speechScript?: string;
+  aiHistoryId?: string;
   editor: {
     editingId: number | null;
     name: string;
@@ -186,10 +188,7 @@ function setupSignature(setup: {
   sections: Section[];
   presentationTarget?: number;
   speakers: string[];
-  displayStyle: DisplayStyle;
-  colorMode: ColorMode;
-  hapticsEnabled: boolean;
-  quietMode?: boolean;
+  speechScript?: string;
 }) {
   return JSON.stringify({
     title: setup.title.trim(),
@@ -197,10 +196,7 @@ function setupSignature(setup: {
     sections: setup.sections.map(({ id, name, target, speaker }) => ({ id, name, target, speaker: speaker || null })),
     presentationTarget: setup.presentationTarget ?? null,
     speakers: setup.speakers,
-    displayStyle: setup.displayStyle,
-    colorMode: setup.colorMode,
-    hapticsEnabled: setup.hapticsEnabled,
-    quietMode: Boolean(setup.quietMode),
+    speechScript: (setup.speechScript ?? "").trim(),
   });
 }
 
@@ -216,10 +212,6 @@ function readSavedPresentations(): SavedPresentation[] {
         presentationMode: item.presentationMode === "group" ? "group" : "individual",
         speakers: Array.isArray(item.speakers) ? item.speakers : [],
         presentationTarget: Number(item.presentationTarget) > 0 ? Number(item.presentationTarget) : undefined,
-        displayStyle: ["minimal", "standard", "detailed"].includes(item.displayStyle) ? item.displayStyle : "standard",
-        colorMode: item.colorMode === "bright" ? "bright" : "muted",
-        hapticsEnabled: Boolean(item.hapticsEnabled),
-        quietMode: Boolean(item.quietMode),
         updatedAt: Number(item.updatedAt) || Date.now(),
       }));
   } catch {
@@ -251,7 +243,8 @@ function isMeaningfulDraft(draft: AutosaveDraft) {
     draft.editor.editingId !== null &&
     Boolean(draft.editor.name || Number(draft.editor.minutes || 0) || Number(draft.editor.seconds || 0));
   return Boolean(
-    draft.title.trim() || draft.speakers.length || !onlyBlankIntro || editorHasText || draft.editor.newSpeaker.trim(),
+    draft.title.trim() || draft.speechScript?.trim() || draft.speakers.length || !onlyBlankIntro ||
+      editorHasText || draft.editor.newSpeaker.trim(),
   );
 }
 
@@ -267,7 +260,7 @@ function ConfirmDialog({
 }: {
   title: string;
   name?: string;
-  body: string;
+  body?: string;
   cancelLabel: string;
   confirmLabel: string;
   danger?: boolean;
@@ -287,7 +280,7 @@ function ConfirmDialog({
   }, []);
   return (
     <dialog
-      aria-describedby="confirm-dialog-description"
+      aria-describedby={body ? "confirm-dialog-description" : undefined}
       aria-labelledby="confirm-dialog-title"
       className="delete-presentation-dialog"
       onCancel={(event) => {
@@ -302,7 +295,7 @@ function ConfirmDialog({
       <div>
         <h2 id="confirm-dialog-title">{title}</h2>
         {name && <p className="delete-presentation-name">{name}</p>}
-        <p id="confirm-dialog-description">{body}</p>
+        {body && <p id="confirm-dialog-description">{body}</p>}
         <div className="delete-presentation-actions">
           <Button autoFocus onClick={onCancel} variant="secondary">
             {cancelLabel}
@@ -453,54 +446,9 @@ function AppHeader({
 const MODES: {
   id: PresentationMode;
   name: string;
-  description: string;
 }[] = [
-  {
-    id: "individual",
-    name: "Individual",
-    description: "Practice on your own",
-  },
-  {
-    id: "group",
-    name: "Group",
-    description: "Practice with speakers and handoffs",
-  },
-];
-
-// SCRUM-156: plain-language names, with what each option shows.
-const DISPLAY_STYLES: {
-  id: DisplayStyle;
-  name: string;
-  description: string;
-  detail: string;
-}[] = [
-  {
-    id: "minimal",
-    name: "Simple",
-    description: "Name + progress bar",
-    detail: "Shows the section name and a progress bar only. Tap the screen any time to peek at the time.",
-  },
-  {
-    id: "standard",
-    name: "Section time",
-    description: "Adds time used",
-    detail: "Also shows which section you're on and the time used against its target, like 0:30 / 1:00.",
-  },
-  {
-    id: "detailed",
-    name: "Everything",
-    description: "Adds total + pace",
-    detail: "Also shows the total time for the whole presentation and whether you're on pace or over.",
-  },
-];
-
-const COLOR_MODES: {
-  id: ColorMode;
-  name: string;
-  description: string;
-}[] = [
-  { id: "muted", name: "Light screen", description: "Soft blue-grey background" },
-  { id: "bright", name: "Dark screen", description: "Navy background, yellow bar" },
+  { id: "individual", name: "Individual" },
+  { id: "group", name: "Group" },
 ];
 
 export default function App() {
@@ -534,13 +482,6 @@ export default function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [draggingId, setDraggingId] = useState<number | null>(null);
   const [dragAnnouncement, setDragAnnouncement] = useState("");
-  // Present-mode display settings belong to each presentation (present-mode-figma-make behaviour).
-  const [displayStyle, setDisplayStyle] = useState<DisplayStyle>("standard");
-  const [colorMode, setColorMode] = useState<ColorMode>("muted");
-  const [showPresentationCustomization, setShowPresentationCustomization] = useState(false);
-  const [hapticsEnabled, setHapticsEnabled] = useState(false);
-  const [quietMode, setQuietMode] = useState(false);
-  const [exactTimeVisible, setExactTimeVisible] = useState(false);
   const [showLiveBreakdown, setShowLiveBreakdown] = useState(false);
   const [confirmingRehearsalSetup, setConfirmingRehearsalSetup] = useState(false);
   const [resumeRehearsalAfterConfirm, setResumeRehearsalAfterConfirm] = useState(false);
@@ -554,6 +495,17 @@ export default function App() {
   });
   const [savedPresentations, setSavedPresentations] = useState<SavedPresentation[]>(readSavedPresentations);
   const [activeSavedId, setActiveSavedId] = useState<string | null>(null);
+  const [aiHistoryId, setAiHistoryId] = useState<string>(() => makeId());
+  const [speechScript, setSpeechScript] = useState("");
+  const [aiAccessCode, setAiAccessCode] = useState("");
+  const [historyRuns, setHistoryRuns] = useState(() => readHistory(window.localStorage));
+  const [saveHistoryTranscript, setSaveHistoryTranscript] = useState(false);
+  const [rehearsalFeedback, setRehearsalFeedback] = useState<RehearsalFeedback>();
+  const [rehearsalTranscriptEdits, setRehearsalTranscriptEdits] = useState<Partial<Record<number, string>>>({});
+  const savedRehearsalFeedback = useRef<RehearsalFeedback>(undefined);
+  const [savedHistoryRunId, setSavedHistoryRunId] = useState<string | null>(null);
+  const [historySaveError, setHistorySaveError] = useState("");
+  const [currentRehearsalId, setCurrentRehearsalId] = useState<string>(() => makeId());
   const [savedSignature, setSavedSignature] = useState<string | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
   const [autosaves, setAutosaves] = useState<Record<string, AutosaveDraft>>(readAutosaves);
@@ -567,29 +519,73 @@ export default function App() {
   const [saveConfirmation, setSaveConfirmation] = useState("");
   const nextId = useRef(2);
   const saveFeedbackTimeout = useRef<number | null>(null);
-  const exactTimeTimeout = useRef<number | null>(null);
   // Timer state always comes from elapsed monotonic time, not from interval counts.
   const clock = useRef({ totalMs: 0, sectionMs: 0, since: null as number | null });
-  const lastHapticSection = useRef<number | null>(null);
 
   const sectionsTarget = useMemo(() => sections.reduce((total, section) => total + section.target, 0), [sections]);
   const totalTarget = presentationTarget ?? sectionsTarget;
   const remainingAllocation = totalTarget - sectionsTarget;
   const speakerTotals = useMemo(() => getSpeakerTotals(sections, speakers), [sections, speakers]);
   const unassignedCount = speakerTotals.find((row) => row.unassigned)?.count ?? 0;
+  // These hooks remain mounted across Sprint 3 screens. Neither recognition nor an
+  // external model can pause the independent performance.now() clock.
+  const speechCoach = useSpeechCoach({
+    active: isRunning && (screen === "rehearse" || (screen === "present" && !presentExitDestination)),
+    sectionId: sections[activeIndex]?.id ?? -1,
+    totalElapsed,
+  });
+  const speechTimedSections = useMemo(() => sections.map((section, index) => ({
+    ...section,
+    actual: actualTimes[index] ??
+      ((screen === "rehearse" || screen === "present") && index === activeIndex
+        ? sectionElapsed : 0),
+  })), [sections, actualTimes, screen, activeIndex, sectionElapsed]);
+  const speechMetrics = useMemo(
+    () => summarizeSpeech(speechCoach.segments, speechTimedSections, totalElapsed, speechCoach.language),
+    [speechCoach.segments, speechTimedSections, totalElapsed, speechCoach.language],
+  );
+  const currentSpeechWords = speechCoach.segments
+    .filter((segment) => segment.sectionId === sections[activeIndex]?.id)
+    .reduce((sum, segment) => sum + countSpeechUnits(segment.text, segment.language ?? speechCoach.language), 0);
+  const coachCue = livePaceCue({
+    target: sections[activeIndex]?.target ?? 0,
+    sectionElapsed,
+    sectionWords: currentSpeechWords,
+    language: speechCoach.language,
+  });
+  const effectiveHistoryId = activeSavedId ?? aiHistoryId;
+  const historyOwnerKey = historyOwner(account?.email);
+  const presentationHistory = useMemo(
+    () => historyForPresentation(historyRuns, historyOwnerKey, effectiveHistoryId),
+    [historyRuns, historyOwnerKey, effectiveHistoryId],
+  );
+  const historyHints = useMemo(
+    () => buildHistoryHints({ runs: presentationHistory, sections }),
+    [presentationHistory, sections],
+  );
+  const activeSection = sections[activeIndex];
+  const rehearsalContext = useMemo(
+    () => activeSection ? liveRehearsalContext(presentationHistory, activeSection) : undefined,
+    [presentationHistory, activeSection],
+  );
+  const liveFeedback = useLiveFeedback({
+    running: isRunning && !presentExitDestination, screen, segments: speechCoach.segments,
+    interim: speechCoach.interim, language: speechCoach.language,
+    sectionId: activeSection?.id ?? -1, sectionName: activeSection?.name ?? "",
+    sectionElapsed, target: activeSection?.target ?? 0,
+    script: speechScript, rehearsalContext, accessCode: aiAccessCode,
+    onAccessDenied: () => speechCoach.setEnabled(false),
+  });
+
   const currentSignature = setupSignature({
     title,
     presentationMode,
     sections,
     presentationTarget: presentationTarget ?? undefined,
     speakers,
-    displayStyle,
-    colorMode,
-    hapticsEnabled,
-    quietMode,
+    speechScript,
   });
   const hasUnsavedChanges = activeSavedId !== null && currentSignature !== savedSignature;
-  const activeSaved = savedPresentations.find((presentation) => presentation.id === activeSavedId);
 
   const snapshot = () => {
     const delta = clock.current.since === null ? 0 : performance.now() - clock.current.since;
@@ -630,20 +626,14 @@ export default function App() {
   }, [isRunning, screen]);
 
   useEffect(() => {
-    return () => {
-      if (exactTimeTimeout.current) window.clearTimeout(exactTimeTimeout.current);
-    };
-  }, []);
-
-  useEffect(() => {
     if (!storageSet("tick-tock-presentations", JSON.stringify(savedPresentations))) {
-      setStorageError("This browser could not store your saved presentations. Keep this tab open, or free up browser storage.");
+      setStorageError("Couldn’t save presentations.");
     }
   }, [savedPresentations]);
 
   useEffect(() => {
     if (!storageSet(AUTOSAVE_KEY, JSON.stringify(autosaves))) {
-      setStorageError("This browser could not autosave your draft. Keep this tab open, or free up browser storage.");
+      setStorageError("Couldn’t autosave draft.");
     }
   }, [autosaves]);
 
@@ -661,10 +651,8 @@ export default function App() {
       sections,
       presentationTarget: presentationTarget ?? undefined,
       speakers,
-      displayStyle,
-      colorMode,
-      hapticsEnabled,
-      quietMode,
+      speechScript,
+      aiHistoryId,
       editor: {
         editingId,
         name: draftName,
@@ -685,10 +673,8 @@ export default function App() {
     sections,
     presentationTarget,
     speakers,
-    displayStyle,
-    colorMode,
-    hapticsEnabled,
-    quietMode,
+    speechScript,
+    aiHistoryId,
     editingId,
     draftName,
     draftMinutes,
@@ -697,22 +683,6 @@ export default function App() {
     isAddingSpeaker,
     newSpeaker,
   ]);
-
-  useEffect(() => {
-    if (
-      screen !== "present" ||
-      !hapticsEnabled ||
-      !isRunning ||
-      !sections[activeIndex] ||
-      sections[activeIndex].target - sectionElapsed > 5 ||
-      sections[activeIndex].target - sectionElapsed <= 0 ||
-      lastHapticSection.current === activeIndex
-    ) {
-      return;
-    }
-    lastHapticSection.current = activeIndex;
-    navigator.vibrate?.([70, 50, 70]);
-  }, [activeIndex, hapticsEnabled, isRunning, screen, sectionElapsed, sections]);
 
   const moveSection = (sectionId: number, targetIndex: number) => {
     setSections((current) => {
@@ -838,7 +808,7 @@ export default function App() {
     }
     const result = applyDraft(sections);
     if ("error" in result) {
-      setFormError(`Finish or cancel the open section first. ${result.error}`);
+      setFormError(result.error);
       return null;
     }
     setSections(result.sections);
@@ -859,8 +829,16 @@ export default function App() {
   };
 
   const startRehearsal = () => {
+    speechCoach.reset();
+    liveFeedback.reset();
+    setCurrentRehearsalId(makeId());
+    setRehearsalFeedback(undefined);
+    setRehearsalTranscriptEdits({});
+    savedRehearsalFeedback.current = undefined;
+    setSavedHistoryRunId(null);
+    setSaveHistoryTranscript(false);
+    setHistorySaveError("");
     clock.current = { totalMs: 0, sectionMs: 0, since: performance.now() };
-    lastHapticSection.current = null;
     setActiveIndex(0);
     setSectionElapsed(0);
     setTotalElapsed(0);
@@ -873,22 +851,17 @@ export default function App() {
   };
 
   const startPresentation = () => {
+    speechCoach.reset();
+    liveFeedback.reset();
+    setRehearsalFeedback(undefined);
     clock.current = { totalMs: 0, sectionMs: 0, since: performance.now() };
-    lastHapticSection.current = null;
     setActiveIndex(0);
     setSectionElapsed(0);
     setTotalElapsed(0);
     setActualTimes([]);
-    setExactTimeVisible(false);
     setShowLiveBreakdown(false);
     setIsRunning(true);
     setScreen("present");
-  };
-
-  const revealExactTime = () => {
-    setExactTimeVisible(true);
-    if (exactTimeTimeout.current) window.clearTimeout(exactTimeTimeout.current);
-    exactTimeTimeout.current = window.setTimeout(() => setExactTimeVisible(false), 3000);
   };
 
   const finishRehearsal = (includeCurrent = true) => {
@@ -936,8 +909,6 @@ export default function App() {
     const nextActual = [...actualTimes];
     nextActual[activeIndex] = sectionMs / 1000;
     setActualTimes(nextActual);
-    setExactTimeVisible(false);
-    if (hapticsEnabled) navigator.vibrate?.(35);
     if (activeIndex === sections.length - 1) {
       clock.current = { totalMs, sectionMs, since: null };
       setTotalElapsed(totalMs / 1000);
@@ -948,25 +919,24 @@ export default function App() {
       return;
     }
     clock.current = { totalMs, sectionMs: 0, since: isRunning ? performance.now() : null };
-    lastHapticSection.current = null;
     setTotalElapsed(totalMs / 1000);
     setActiveIndex((value) => value + 1);
     setSectionElapsed(0);
   };
 
   const restartCurrentSection = () => {
+    speechCoach.restartSection();
+    if (screen === "present") liveFeedback.restartSection();
     const { totalMs, sectionMs } = snapshot();
     const preservedTotal = Math.max(0, totalMs - sectionMs);
     clock.current = { totalMs: preservedTotal, sectionMs: 0, since: isRunning ? performance.now() : null };
     setTotalElapsed(preservedTotal / 1000);
     setSectionElapsed(0);
-    lastHapticSection.current = null;
     setActualTimes((current) => {
       const next = [...current];
       next[activeIndex] = 0;
       return next;
     });
-    setExactTimeVisible(false);
   };
 
   const resetToSetup = () => {
@@ -1022,16 +992,66 @@ export default function App() {
     sections: savedSections,
     presentationTarget: presentationTarget ?? undefined,
     speakers,
-    displayStyle,
-    colorMode,
-    hapticsEnabled,
-    quietMode,
+    speechScript,
   });
 
   const showSaveFeedback = (message: string) => {
     setSaveConfirmation(message);
     if (saveFeedbackTimeout.current) window.clearTimeout(saveFeedbackTimeout.current);
     saveFeedbackTimeout.current = window.setTimeout(() => setSaveConfirmation(""), 5000);
+  };
+
+  const saveRehearsalHistory = (speechSuggestions: ReturnType<typeof buildSpeechFeedback>["suggestions"]) => {
+    if (speechCoach.provider === "qwen" && speechCoach.relayIsMock && speechCoach.segments.length > 0) {
+      setHistorySaveError("Simulated rehearsals can’t be saved.");
+      return;
+    }
+    // Incomplete rehearsals must not turn unvisited sections into false
+    // "finished early" findings.
+    const timedSections = speechTimedSections.filter((_, index) =>
+      !rehearsalIncomplete || index <= rehearsalEndIndex);
+    const metrics = summarizeSpeech(speechCoach.segments, timedSections, totalElapsed, speechCoach.language);
+    const run = createRehearsalRun({
+      id: currentRehearsalId,
+      presentationId: effectiveHistoryId,
+      owner: historyOwnerKey,
+      title: title.trim() || "Untitled presentation",
+      presentationMode,
+      timedSections,
+      segments: speechCoach.segments,
+      metrics,
+      duration: totalElapsed,
+      includeTranscript: saveHistoryTranscript,
+      transcriptEdits: rehearsalTranscriptEdits,
+      feedback: speechSuggestions.length
+        ? { suggestions: [...speechSuggestions, ...(rehearsalFeedback && "suggestions" in rehearsalFeedback
+          ? rehearsalFeedback.suggestions : [])] }
+        : rehearsalFeedback,
+    });
+    const next = upsertHistory(historyRuns, run);
+    if (!writeHistory(window.localStorage, next)) {
+      setHistorySaveError("Couldn’t save rehearsal.");
+      return;
+    }
+    setHistoryRuns(next);
+    savedRehearsalFeedback.current = rehearsalFeedback;
+    setSavedHistoryRunId(run.id);
+    setHistorySaveError("");
+  };
+  const deleteHistoryRun = (id: string) => {
+    const next = historyRuns.filter((run) => run.id !== id);
+    if (writeHistory(window.localStorage, next)) {
+      setHistoryRuns(next);
+      if (savedHistoryRunId === id) setSavedHistoryRunId(null);
+    }
+  };
+  const clearPresentationHistory = () => {
+    const next = historyRuns.filter(
+      (run) => !(run.presentationId === effectiveHistoryId && run.owner === historyOwnerKey));
+    if (writeHistory(window.localStorage, next)) {
+      setHistoryRuns(next);
+      setSavedHistoryRunId(null);
+    }
   };
 
   const savePresentation = (signedInAccount = account) => {
@@ -1050,7 +1070,7 @@ export default function App() {
     const existing = savedPresentations.find(
       (presentation) => presentation.id === activeSavedId && presentation.ownerEmail === signedInAccount.email,
     );
-    const id = existing?.id ?? makeId();
+    const id = existing?.id ?? aiHistoryId;
     const saved = buildSavedPresentation(id, signedInAccount.email, nextSections);
     setSavedPresentations((current) => [
       saved,
@@ -1059,12 +1079,7 @@ export default function App() {
     setActiveSavedId(id);
     setSavedSignature(setupSignature(saved));
     setFormError("");
-    // SCRUM-160: say exactly what was stored (the setup) and what was not (timing results).
-    const speakerPart =
-      presentationMode === "group" ? `, ${speakers.length} ${speakers.length === 1 ? "speaker" : "speakers"}` : "";
-    showSaveFeedback(
-      `${existing ? "Setup changes saved" : "Setup saved"}: title, ${pluralSections(nextSections.length)}${speakerPart} and display settings. Timing results are not saved.`,
-    );
+    showSaveFeedback("Setup saved");
   };
 
   const signIn = () => {
@@ -1075,6 +1090,16 @@ export default function App() {
       return;
     }
     const nextAccount = { name, email };
+    // Transfer this presentation's explicitly saved guest rehearsal data when
+    // the user adopts a local demo profile on the same browser.
+    if (!account) {
+      const moved = historyRuns.map((run) =>
+        run.owner === "guest:local-device" && run.presentationId === effectiveHistoryId
+          ? { ...run, owner: email }
+          : run);
+      if (moved.some((run, index) => run.owner !== historyRuns[index].owner) &&
+          writeHistory(window.localStorage, moved)) setHistoryRuns(moved);
+    }
     if (autosaveOn && !account) {
       // The guest draft being worked on moves into this profile's slot.
       setAutosaves((current) => {
@@ -1105,6 +1130,8 @@ export default function App() {
   };
 
   const startNewPresentation = (mode: PresentationMode) => {
+    setAiHistoryId(makeId());
+    setSpeechScript("");
     setPresentationMode(mode);
     setTitle("");
     // SCRUM-149: no placeholder speakers; the Intro section starts Unassigned.
@@ -1121,11 +1148,6 @@ export default function App() {
     setDraftMinutes("");
     setDraftSeconds("");
     setDraftSpeaker("");
-    setDisplayStyle("standard");
-    setColorMode("muted");
-    setHapticsEnabled(false);
-    setQuietMode(false);
-    setShowPresentationCustomization(false);
     setActiveSavedId(null);
     setSavedSignature(null);
     setFormError("");
@@ -1140,6 +1162,8 @@ export default function App() {
     presentation: SavedPresentation,
     destination: "setup" | "rehearse" | "present" = "setup",
   ) => {
+    setAiHistoryId(presentation.id);
+    setSpeechScript(presentation.speechScript ?? "");
     setTitle(presentation.title);
     setPresentationMode(presentation.presentationMode);
     setSections(presentation.sections);
@@ -1148,16 +1172,11 @@ export default function App() {
     setTargetSeconds(presentation.presentationTarget ? String(presentation.presentationTarget % 60).padStart(2,"0") : "");
     setSpeakers(presentation.speakers);
     // Restore the display/color settings that were saved with this presentation.
-    setDisplayStyle(presentation.displayStyle);
-    setColorMode(presentation.colorMode);
-    setHapticsEnabled(presentation.hapticsEnabled);
-    setQuietMode(Boolean(presentation.quietMode));
     setActiveSavedId(presentation.id);
     setSavedSignature(setupSignature(presentation));
     setIsAddingSpeaker(false);
     setNewSpeaker("");
     setEditingId(null);
-    setShowPresentationCustomization(false);
     setFormError("");
     setSaveConfirmation("");
     nextId.current = Math.max(0, ...presentation.sections.map((section) => section.id)) + 1;
@@ -1207,6 +1226,8 @@ export default function App() {
     const saved = draft.savedPresentationId
       ? savedPresentations.find((item) => item.id === draft.savedPresentationId)
       : undefined;
+    setAiHistoryId(saved?.id ?? draft.aiHistoryId ?? makeId());
+    setSpeechScript(draft.speechScript ?? saved?.speechScript ?? "");
     setPresentationMode(draft.presentationMode);
     setTitle(draft.title);
     setSections(draft.sections);
@@ -1214,10 +1235,6 @@ export default function App() {
     setTargetMinutes(draft.presentationTarget ? String(Math.floor(draft.presentationTarget / 60)) : "");
     setTargetSeconds(draft.presentationTarget ? String(draft.presentationTarget % 60).padStart(2,"0") : "");
     setSpeakers(draft.speakers);
-    setDisplayStyle(draft.displayStyle);
-    setColorMode(draft.colorMode);
-    setHapticsEnabled(draft.hapticsEnabled);
-    setQuietMode(Boolean(draft.quietMode));
     setActiveSavedId(saved ? saved.id : null);
     setSavedSignature(saved ? setupSignature(saved) : null);
     setEditingId(draft.editor.editingId);
@@ -1228,7 +1245,6 @@ export default function App() {
     setIsAddingSpeaker(draft.editor.addingSpeaker);
     setNewSpeaker(draft.editor.newSpeaker);
     setSpeakerError("");
-    setShowPresentationCustomization(false);
     setFormError("");
     setSaveConfirmation("");
     nextId.current = Math.max(1, ...draft.sections.map((section) => section.id)) + 1;
@@ -1288,7 +1304,6 @@ export default function App() {
   const confirmDialog = pendingConfirm && (
     pendingConfirm.kind === "delete" ? (
       <ConfirmDialog
-        body="Only this saved presentation is removed from this browser. Your other presentations stay. This can’t be undone."
         cancelLabel="Keep it"
         confirmLabel="Delete"
         danger
@@ -1299,7 +1314,6 @@ export default function App() {
       />
     ) : pendingConfirm.kind === "discard" ? (
       <ConfirmDialog
-        body="Your autosaved draft will be cleared from this device. Saved presentations are not affected."
         cancelLabel="Keep draft"
         confirmLabel="Discard"
         danger
@@ -1310,11 +1324,6 @@ export default function App() {
       />
     ) : (
       <ConfirmDialog
-        body={
-          pendingConfirm.kind === "replace-new"
-            ? "Each mode keeps one autosaved draft. Starting a new presentation replaces the draft below."
-            : "Each mode keeps one autosaved draft. Opening another presentation replaces the unsaved draft below."
-        }
         cancelLabel="Keep my draft"
         confirmLabel={pendingConfirm.kind === "replace-new" ? "Start new" : "Open anyway"}
         name={pendingDraftName}
@@ -1346,7 +1355,7 @@ export default function App() {
   const addSpeaker = () => {
     const name = newSpeaker.trim();
     if (!name) {
-      setSpeakerError("Type a speaker name, or cancel.");
+      setSpeakerError("Enter a speaker name.");
       return;
     }
     if (speakers.some((speaker) => speaker.toLowerCase() === name.toLowerCase())) {
@@ -1381,23 +1390,10 @@ export default function App() {
   // ----- Shared pieces rendered on several screens -----
   const saveButtonLabel = !account || !activeSavedId ? "Save setup" : hasUnsavedChanges ? "Save changes" : "Setup saved";
   const saveDisabled = Boolean(account && activeSavedId && !hasUnsavedChanges);
-  const saveStatusText = !account
-    ? "Save setup keeps the title, sections, speakers and display settings, not timing results. Sign in to use it; your draft is autosaved on this device."
-    : !activeSavedId
-      ? "Save setup keeps the title, sections, speakers and display settings. Timing results are not saved."
-      : hasUnsavedChanges
-        ? "This setup has unsaved changes."
-        : `Setup saved ${activeSaved ? formatUpdated(activeSaved.updatedAt) : ""} in this browser. Timing results are not saved.`;
 
   const autosaveStatus = !autosaveOn
     ? ""
-    : !account
-      ? "Draft autosaved on this device"
-      : !activeSavedId
-        ? "Draft autosaved · press Save setup to add it to your list"
-        : hasUnsavedChanges
-          ? "Unsaved changes · draft autosaved"
-          : "All changes saved";
+    : !activeSavedId || hasUnsavedChanges ? "Draft autosaved" : "";
 
   const saveFeedback = saveConfirmation && (
     <div aria-live="polite" className="save-confirmation" role="status">
@@ -1405,13 +1401,36 @@ export default function App() {
     </div>
   );
 
+  const coachDock = (
+    <CoachDock
+      available={speechCoach.available}
+      enabled={speechCoach.enabled}
+      listening={speechCoach.listening}
+      error={speechCoach.error}
+      interim={speechCoach.interim}
+      transcript={speechCoach.transcript}
+      words={speechMetrics.words}
+      wpm={speechMetrics.wpm}
+      cue={coachCue}
+      language={speechCoach.language}
+      languageLocked={speechCoach.segments.length > 0}
+      onLanguageChange={speechCoach.setLanguage}
+      provider={speechCoach.provider}
+      onProviderChange={speechCoach.setProvider}
+      relayConfigured={speechCoach.relayConfigured}
+      relayIsMock={speechCoach.relayIsMock}
+      relayCode={speechCoach.relayCode}
+      onRelayCodeChange={speechCoach.setRelayCode}
+      unitLabel={speechMetrics.unitLabel}
+      rateLabel={speechMetrics.rateLabel}
+      onToggle={speechCoach.setEnabled}
+    />
+  );
+
   const savePanel = (
     <>
       <div className="presentation-save-panel">
-        <span>
-          <strong>Presentation setup</strong>
-          <small>{saveStatusText}</small>
-        </span>
+        <strong>Presentation setup</strong>
         <Button
           disabled={saveDisabled}
           icon={saveDisabled ? "check" : "save"}
@@ -1425,7 +1444,6 @@ export default function App() {
     </>
   );
 
-  const currentDisplayStyle = DISPLAY_STYLES.find((style) => style.id === displayStyle) ?? DISPLAY_STYLES[1];
   const renderSpeakerAllocation = () => (
     <section aria-label="Target time per speaker" className="speaker-allocation">
       <div className="speaker-allocation__heading">
@@ -1451,7 +1469,7 @@ export default function App() {
       {unassignedCount > 0 && (
         <p className="unassigned-note">
           <Icon name="warning" size={16} />
-          {pluralSections(unassignedCount)} {unassignedCount === 1 ? "has" : "have"} no speaker. You can still start.
+          {pluralSections(unassignedCount)} unassigned
         </p>
       )}
     </section>
@@ -1475,7 +1493,6 @@ export default function App() {
           {account ? (
             <>
               <span className="account-avatar"><Icon name="user" size={30} /></span>
-              <span className="eyebrow">Your account</span>
               <h1>{account.name}</h1>
               <p className="lede account-email">{account.email}</p>
               <div className="account-stats">
@@ -1488,26 +1505,16 @@ export default function App() {
               <Button className="button--full" onClick={signOut} variant="secondary">
                 Sign out
               </Button>
-              <p className="account-device-note">Demo profile only: saved in this browser on this device. No password, not secure, and not synced to other devices.</p>
             </>
           ) : (
             <>
-              <span className="eyebrow">Local demo profile</span>
-              <h1>Save every presentation.</h1>
-              <p className="lede">
-                Sign in to keep multiple presentations and return to every section, speaker, and display setting.
-              </p>
-              <div className="account-benefits">
-                <div><Icon name="save" /><span><strong>Keep your setup</strong><small>Sections, speakers, timing, and display preferences</small></span></div>
-                <div><Icon name="clock" /><span><strong>Pick up anytime</strong><small>Your presentation library stays ready on this device</small></span></div>
-              </div>
+              <h1>Local profile</h1>
               <div className="account-form">
                 <label className="field">
                   <span className="field__label">Name</span>
                   <input
                     autoComplete="name"
                     onChange={(event) => setAccountName(event.target.value)}
-                    placeholder="Your name"
                     value={accountName}
                   />
                 </label>
@@ -1520,12 +1527,11 @@ export default function App() {
                     onKeyDown={(event) => {
                       if (event.key === "Enter") signIn();
                     }}
-                    placeholder="you@example.com"
                     value={accountEmail}
                   />
                 </label>
                 {accountError && <div className="form-error"><Icon name="warning" size={18} />{accountError}</div>}
-                <Button className="button--full" onClick={signIn}>Continue with email</Button>
+                <Button className="button--full" onClick={signIn}>Continue</Button>
               </div>
               <button
                 className="guest-link"
@@ -1537,7 +1543,6 @@ export default function App() {
               >
                 Continue as guest
               </button>
-              <p className="account-device-note">No account is required to rehearse or present. Demo profile only: saved in this browser on this device. No password, not secure, and not synced to other devices.</p>
             </>
           )}
         </section>
@@ -1561,23 +1566,7 @@ export default function App() {
         </header>
         <section className="gallery-content">
           <div className="gallery-intro">
-            <span className="eyebrow">{account ? `Welcome back, ${account.name.split(" ")[0]}` : "Guest mode"}</span>
             <h1>{account ? "Your presentations" : "Start a presentation"}</h1>
-            <p>
-              {account
-                ? "Time your presentation sections, not your slides. Choose a mode to continue a draft, open a saved setup, or start something new."
-                : "Tick-Tock times presentation sections while you rehearse or present; it is not a slide editor. Work as a guest, with one autosaved draft per mode on this device."}
-            </p>
-          </div>
-          {!account && (
-            <button className="save-callout" onClick={() => openAccount("concepts")} type="button">
-              <span className="save-callout__icon"><Icon name="save" /></span>
-              <span><strong>Want to keep more than one?</strong><small>Sign in to save presentations to a list.</small></span>
-              <Icon name="chevron-right" />
-            </button>
-          )}
-          <div className="new-presentation-heading">
-            <h2>Choose a setup</h2>
           </div>
           <div className="concept-grid">
             {MODES.map((mode) => {
@@ -1594,7 +1583,6 @@ export default function App() {
                   </span>
                   <span className="concept-card__copy">
                     <strong>{mode.name}</strong>
-                    <small>{mode.description}</small>
                     {draft && (
                       <span className="concept-card__draft">
                         <Icon name="edit" size={13} /> Draft: {draft.title.trim() || "Untitled presentation"}
@@ -1626,17 +1614,15 @@ export default function App() {
           <span>{mode} presentation</span>
         </div>
         <section className="page-content">
-          <span className="eyebrow">{mode === "group" ? "Group" : "Individual"} mode</span>
           <h1>My presentations</h1>
-          <p className="lede">Pick up where you left off, or start something new.</p>
           {storageError && (
             <p className="form-error" role="alert"><Icon name="warning" size={18} />{storageError}</p>
           )}
 
           {draft && (
-            <section aria-label="Continue where you left off" className="library-section library-section--continue">
+            <section aria-label="Current draft" className="library-section library-section--continue">
               <div className="section-heading">
-                <h2>Continue where you left off</h2>
+                <h2>Current draft</h2>
               </div>
               <article className="saved-presentation library-card library-card--draft">
                 <button
@@ -1649,7 +1635,7 @@ export default function App() {
                   </span>
                   <span className="saved-presentation__copy">
                     <span className="presentation-status presentation-status--draft">
-                      {draft.savedPresentationId ? "Unsaved changes" : "Autosaved draft"}
+                      {draft.savedPresentationId ? "Unsaved changes" : "Autosaved"}
                     </span>
                     <strong>{draft.title.trim() || "Untitled presentation"}</strong>
                     <small>
@@ -1657,9 +1643,8 @@ export default function App() {
                       {mode === "group" && ` · ${draft.speakers.length} ${draft.speakers.length === 1 ? "speaker" : "speakers"}`}
                     </small>
                     <time dateTime={new Date(draft.updatedAt).toISOString()}>
-                      Autosaved {formatUpdated(draft.updatedAt)}
+                      {formatUpdated(draft.updatedAt)}
                     </time>
-                    {draft.savedPresentationId && <small>Your saved copy is unchanged until you press Save setup.</small>}
                     <span className="presentation-card-action">
                       Continue <Icon name="chevron-right" size={15} />
                     </span>
@@ -1684,12 +1669,7 @@ export default function App() {
           >
             Start new presentation
           </Button>
-          <p className="library-device-note">
-            {account ? `${account.name}'s local demo profile` : "Guest"} · One autosaved draft per mode. Kept in this
-            browser on this device only; not secure and not synced.
-          </p>
-
-          {account ? (
+          {account && (
             <section aria-label="Saved presentations" className="library-section">
               <div className="section-heading">
                 <h2>Saved presentations</h2>
@@ -1697,7 +1677,7 @@ export default function App() {
               </div>
               {modeSaved.length === 0 ? (
                 <p className="presentation-library__empty">
-                  No saved {mode} presentations yet. Press Save setup to keep one here.
+                  No saved presentations
                 </p>
               ) : (
                 <div className="presentation-library">
@@ -1740,12 +1720,6 @@ export default function App() {
                 </div>
               )}
             </section>
-          ) : (
-            <button className="save-callout library-sign-in" onClick={() => openAccount("presentations")} type="button">
-              <span className="save-callout__icon"><Icon name="save" /></span>
-              <span><strong>Want to keep more than one?</strong><small>Sign in with a demo profile to save presentations to a list.</small></span>
-              <Icon name="chevron-right" />
-            </button>
           )}
         </section>
         {confirmDialog}
@@ -1756,9 +1730,6 @@ export default function App() {
   if (screen === "setup") {
     const isEditingExisting = editingId !== null && editingId !== 0;
     const editingSection = sections.find((section) => section.id === editingId);
-    const previewMinutes = draftMinutes === "" ? 0 : Number(draftMinutes);
-    const previewSeconds = draftSeconds === "" ? 0 : Number(draftSeconds);
-    const previewTarget = previewMinutes * 60 + previewSeconds;
     const sectionEditor = editingId !== null && (
       <div
         aria-label={isEditingExisting ? "Edit section" : "Add a section"}
@@ -1766,13 +1737,7 @@ export default function App() {
         role="group"
       >
         <div className="editor-card__top">
-          <div>
-            <span className="editor-card__badge">
-              <Icon name={isEditingExisting ? "edit" : "plus"} size={14} />
-              {isEditingExisting ? "Editing" : "New section"}
-            </span>
-            <h3>{isEditingExisting ? `Edit “${editingSection?.name ?? ""}”` : "Add a section"}</h3>
-          </div>
+          <h3>{isEditingExisting ? `Edit “${editingSection?.name ?? ""}”` : "Add section"}</h3>
           <button className="text-button" onClick={closeEditor} type="button">Cancel</button>
         </div>
         <div className="editor-fields">
@@ -1782,7 +1747,6 @@ export default function App() {
               aria-required="true"
               autoFocus
               onChange={(event) => setDraftName(event.target.value)}
-              placeholder="e.g. Team intro"
               value={draftName}
             />
           </label>
@@ -1828,11 +1792,6 @@ export default function App() {
                 Use remaining {formatTime(remainingAllocation)}
               </button>
             )}
-            <span className="field__hint" aria-live="polite">
-              {previewTarget > 0 && previewSeconds <= 59
-                ? `Target: ${formatDuration(previewTarget)}`
-                : "Example: 1 minute 30 seconds. Leave seconds empty for whole minutes."}
-            </span>
           </fieldset>
           {presentationMode === "group" && (
             <label className="field field--speaker">
@@ -1844,9 +1803,6 @@ export default function App() {
                 </select>
                 <Icon name="chevron-down" size={22} />
               </span>
-              {speakers.length === 0 && (
-                <span className="field__hint">Add speakers above to assign this section. It can stay Unassigned.</span>
-              )}
             </label>
           )}
         </div>
@@ -1870,10 +1826,7 @@ export default function App() {
             <p className="form-error" role="alert"><Icon name="warning" size={18} />{storageError}</p>
           )}
           <div className="setup-heading">
-            <div>
-              <span className="eyebrow">{account ? (activeSavedId ? "Saved presentation" : "New presentation") : "Guest presentation"}</span>
-              <h1>{presentationMode === "group" ? "Group setup" : "Presentation setup"}</h1>
-            </div>
+            <h1>{presentationMode === "group" ? "Group setup" : "Presentation setup"}</h1>
             <Button
               disabled={saveDisabled}
               icon={saveDisabled ? "check" : "save"}
@@ -1893,40 +1846,47 @@ export default function App() {
             </p>
           )}
           {saveFeedback}
-          <p className="required-legend"><RequiredMark /> Required</p>
 
           <label className="field">
             <span className="field__label">Presentation title <RequiredMark /></span>
             <input
               aria-required="true"
               onChange={(event) => setTitle(event.target.value)}
-              placeholder="e.g. Final pitch"
               value={title}
             />
           </label>
 
           <div className="presentation-target-field">
             <h2>Overall presentation target</h2>
-            <p className="field__hint">Optional. Set an independent goal for the whole presentation. Leave blank to use the sum of sections.</p>
             <div className="time-field__inputs">
               <label className="time-field__unit"><input aria-label="Overall target minutes" inputMode="numeric" placeholder="mm" value={targetMinutes} onChange={(e) => { const v=digitsOnly(e.target.value).slice(0,3); setTargetMinutes(v); const seconds=Number(targetSeconds || 0); setPresentationTarget(Number(v)*60+seconds || null); }}/><span>minutes</span></label>
               <span className="time-field__colon">:</span>
               <label className="time-field__unit"><input aria-label="Overall target seconds" inputMode="numeric" placeholder="ss" value={targetSeconds} onChange={(e) => { const v=digitsOnly(e.target.value).slice(0,2); if(Number(v)>59) return; setTargetSeconds(v); setPresentationTarget(Number(targetMinutes || 0)*60+Number(v) || null); }}/><span>seconds</span></label>
             </div>
-            <p className="field__hint">Section allocation: {formatTime(sectionsTarget)} · {remainingAllocation >= 0 ? `${formatTime(remainingAllocation)} still available` : `${formatTime(-remainingAllocation)} over your goal`}</p>
+            {presentationTarget !== null && (
+              <p className="field__hint">{remainingAllocation === 0 ? "Fully allocated" :
+                `${formatTime(Math.abs(remainingAllocation))} ${remainingAllocation > 0 ? "unallocated" : "over target"}`}</p>
+            )}
+            {import.meta.env.VITE_AI_PAID_REVIEW_ENABLED === "true" && presentationTarget !== null && editingId === null && (
+              <SectionPlan key={JSON.stringify([presentationTarget, title, sections])}
+                target={presentationTarget} title={title} sections={sections}
+                script={speechScript} onScriptChange={setSpeechScript}
+                code={aiAccessCode} onCodeChange={setAiAccessCode} formatTime={formatTime}
+                onApply={(plan) => {
+                  setSections(plan.map((item) => {
+                    const existing = item.existingIndex === null ? undefined : sections[item.existingIndex];
+                    return existing ?? { id: nextId.current++, name: item.name, target: item.seconds };
+                  }));
+                  setFormError("");
+                }} />
+            )}
           </div>
           {presentationMode === "group" && (
             <div className="team-panel">
               <div className="team-panel__heading">
-                <div>
-                  <h2>Speakers</h2>
-                  <p>Add each person who will present.</p>
-                </div>
+                <h2>Speakers</h2>
                 <span>{speakers.length} {speakers.length === 1 ? "speaker" : "speakers"}</span>
               </div>
-              {speakers.length === 0 && !isAddingSpeaker && (
-                <p className="speaker-empty">No speakers yet. Tap Add speaker to add your first presenter.</p>
-              )}
               {speakers.length > 0 && (
                 <ul aria-label="Speakers" className="speaker-list">
                   {speakerTotals.filter((row) => !row.unassigned).map((row) => (
@@ -1976,7 +1936,6 @@ export default function App() {
                       if (event.key === "Enter") addSpeaker();
                       if (event.key === "Escape") cancelAddSpeaker();
                     }}
-                    placeholder="Speaker name"
                     value={newSpeaker}
                   />
                   <div className="add-speaker__actions">
@@ -1995,7 +1954,7 @@ export default function App() {
               {unassignedCount > 0 && (
                 <p className="unassigned-note">
                   <Icon name="warning" size={16} />
-                  {pluralSections(unassignedCount)} unassigned ({formatTime(speakerTotals.find((row) => row.unassigned)?.target ?? 0)}). Edit a section to pick a speaker.
+                  {pluralSections(unassignedCount)} unassigned
                 </p>
               )}
             </div>
@@ -2111,7 +2070,7 @@ export default function App() {
             </button>
           </div>
           <div className="ready-hero">
-            <h1>Ready?</h1>
+            <h1>Review presentation</h1>
             <p>{title}</p>
           </div>
           <div className="ready-summary">
@@ -2152,14 +2111,12 @@ export default function App() {
           </div>
           {presentationMode === "group" && renderSpeakerAllocation()}
           {savePanel}
+          <HistoryPanel runs={presentationHistory} hints={historyHints}
+            onDelete={deleteHistoryRun} onClear={clearPresentationHistory} compact />
           <div className="launch-options">
-            <h2>Choose how to begin</h2>
             <button className="launch-option launch-option--rehearse" onClick={startRehearsal} type="button">
               <span className="launch-option__icon"><Icon name="play" size={22} /></span>
-              <span>
-                <strong>Rehearse</strong>
-                <small>Practice and review your pacing</small>
-              </span>
+              <strong>Rehearse</strong>
               <Icon name="chevron-right" />
             </button>
             <button
@@ -2171,10 +2128,7 @@ export default function App() {
               type="button"
             >
               <span className="launch-option__icon"><Icon name="clock" size={22} /></span>
-              <span>
-                <strong>Present</strong>
-                <small>Calm, glanceable timer for the real thing</small>
-              </span>
+              <strong>Present</strong>
               <Icon name="chevron-right" />
             </button>
           </div>
@@ -2184,12 +2138,6 @@ export default function App() {
   }
 
   if (screen === "presentation-ready") {
-    const selectedDisplayStyle = DISPLAY_STYLES.find((style) => style.id === displayStyle) ?? DISPLAY_STYLES[1];
-    const selectedColor = COLOR_MODES.find((mode) => mode.id === colorMode) ?? COLOR_MODES[0];
-    // Preview the user's real first section, halfway through its own target.
-    const previewSection = sections[0];
-    const previewNext = sections[1];
-    const previewElapsed = previewSection ? Math.round(previewSection.target / 2) : 0;
     return (
       <main className={`app-shell presentation-ready-screen mode--${presentationMode}`}>
         <AppHeader account={account} onAccount={() => openAccount("presentation-ready")} onHome={goHome} />
@@ -2198,7 +2146,6 @@ export default function App() {
             <Icon name="arrow-left" /> Back
           </button>
           <div className="presentation-ready__intro">
-            <span className="eyebrow">Presentation mode</span>
             <h1>Ready to present?</h1>
             <p>{title}</p>
           </div>
@@ -2226,144 +2173,6 @@ export default function App() {
 
           {presentationMode === "group" && renderSpeakerAllocation()}
 
-          <div className={`presentation-setting quiet-setting ${quietMode ? "quiet-setting--on" : ""}`}>
-            <div>
-              <strong>Quiet view</strong>
-              <small>
-                Hide times and ahead/behind status while you present. You still see the section, what's next
-                and the Next button. Timing is still recorded for your summary.
-              </small>
-            </div>
-            <button
-              aria-label="Quiet view"
-              aria-pressed={quietMode}
-              className="switch"
-              onClick={() => setQuietMode((value) => !value)}
-              type="button"
-            >
-              <span />
-            </button>
-          </div>
-
-          <button
-            aria-expanded={showPresentationCustomization}
-            className="presentation-customize-toggle"
-            onClick={() => setShowPresentationCustomization((value) => !value)}
-            type="button"
-          >
-            <span>
-              <strong>Customize presentation display</strong>
-              <small>{quietMode ? "Quiet view" : selectedDisplayStyle.name} · {selectedColor.name}</small>
-            </span>
-            <Icon name="chevron-down" size={20} />
-          </button>
-
-          {showPresentationCustomization && (
-            <div className="presentation-customization">
-              <fieldset className="presentation-setting">
-                <legend>Display detail</legend>
-                <div className="segmented-control display-style-control">
-                  {DISPLAY_STYLES.map((style) => (
-                    <button
-                      aria-pressed={displayStyle === style.id}
-                      key={style.id}
-                      onClick={() => setDisplayStyle(style.id)}
-                      type="button"
-                    >
-                      <strong>{style.name}</strong>
-                      <small>{style.description}</small>
-                    </button>
-                  ))}
-                </div>
-                <p aria-live="polite" className="display-style-detail">
-                  {quietMode ? (
-                    <><strong>Quiet view is on:</strong> times and pace stay hidden until you turn it off.</>
-                  ) : (
-                    <><strong>{selectedDisplayStyle.name}:</strong> {selectedDisplayStyle.detail}</>
-                  )}
-                </p>
-              </fieldset>
-
-              <fieldset className="presentation-setting">
-                <legend>Screen color</legend>
-                <div className="segmented-control segmented-control--two color-mode-control">
-                  {COLOR_MODES.map((mode) => (
-                    <button
-                      aria-pressed={colorMode === mode.id}
-                      key={mode.id}
-                      onClick={() => setColorMode(mode.id)}
-                      type="button"
-                    >
-                      <span aria-hidden="true" className={`color-swatch color-swatch--${mode.id}`} />
-                      <span className="color-mode-control__copy">
-                        <strong>{mode.name}</strong>
-                        <small>{mode.description}</small>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </fieldset>
-
-              <div
-                aria-label={`Preview of ${previewSection?.name ?? "your first section"} with ${selectedDisplayStyle.name} on a ${selectedColor.name.toLowerCase()}`}
-                className={`presentation-preview presentation-preview--${colorMode}`}
-                role="img"
-              >
-                <div className="presentation-preview__top">
-                  {(displayStyle !== "minimal" || quietMode) && (
-                    <span>Section 1 of {sections.length}</span>
-                  )}
-                  {displayStyle === "detailed" && !quietMode && (
-                    <span>Total {formatTime(previewElapsed)} / {formatTime(totalTarget)}</span>
-                  )}
-                </div>
-                <div className="presentation-preview__stage">
-                  {presentationMode === "group" && (
-                    <small>Presenting · {speakerLabel(previewSection?.speaker)}</small>
-                  )}
-                  <strong>{previewSection?.name}</strong>
-                  <div className="presentation-preview__progress">
-                    <span style={{ width: "50%" }} />
-                  </div>
-                  {displayStyle === "minimal" || quietMode ? (
-                    <i className="presentation-preview__hint">{quietMode ? "Timing hidden" : "Time hidden"} · tap to peek</i>
-                  ) : (
-                    <time>{formatTime(previewElapsed)} / {formatTime(previewSection?.target ?? 0)}</time>
-                  )}
-                  {displayStyle === "detailed" && !quietMode && (
-                    <b className="presentation-preview__status">On pace</b>
-                  )}
-                  <p>
-                    {previewNext
-                      ? presentationMode === "group"
-                        ? `Up next · ${speakerLabel(previewNext.speaker)} — ${previewNext.name}${displayStyle === "detailed" && !quietMode ? ` · ${formatTime(previewNext.target)}` : ""}`
-                        : `Next: ${previewNext.name}${displayStyle === "detailed" && !quietMode ? ` · ${formatTime(previewNext.target)}` : ""}`
-                      : "Final section"}
-                  </p>
-                </div>
-              </div>
-              <p className="presentation-preview__caption">
-                Preview of your first section, “{previewSection?.name}”, halfway through ({formatTime(previewElapsed)} of {formatTime(previewSection?.target ?? 0)}).
-              </p>
-
-              <div className="presentation-setting haptic-setting">
-                <div>
-                  <strong>Pacing cues</strong>
-                  <small>Pulse in the final 5 seconds and vibrate when supported</small>
-                </div>
-                <button
-                  aria-label="Toggle pacing cues"
-                  aria-pressed={hapticsEnabled}
-                  className="switch"
-                  onClick={() => setHapticsEnabled((value) => !value)}
-                  type="button"
-                >
-                  <span />
-                </button>
-              </div>
-            </div>
-          )}
-
           {savePanel}
         </section>
         <div className="sticky-action sticky-action--light">
@@ -2378,128 +2187,71 @@ export default function App() {
   if (screen === "present") {
     const current = sections[activeIndex];
     const isLast = activeIndex === sections.length - 1;
-    const isOver = sectionElapsed > current.target;
-    const progress = Math.min(100, (sectionElapsed / current.target) * 100);
-    // Quiet view keeps the screen calm: no over/near colors, times or pace status.
-    const pace = quietMode ? "neutral" : isOver ? "over" : progress >= 80 ? "near" : "neutral";
-    const showTiming = !quietMode && displayStyle !== "minimal";
-    const cueActive =
-      hapticsEnabled &&
-      isRunning &&
-      sectionElapsed < current.target &&
-      current.target - sectionElapsed <= 5;
+    const remaining = current.target - sectionElapsed;
+    const paceCue = liveFeedback.enabled && isRunning && !presentExitDestination
+      ? presentPaceCue({ target: current.target, sectionElapsed, sectionWords: currentSpeechWords, language: speechCoach.language })
+      : null;
+    const cue = liveFeedback.cue ?? paceCue;
+    const microphoneStatus = liveFeedback.enabled && (!speechCoach.available || speechCoach.error)
+      ? "Microphone unavailable"
+      : "";
+    const nextSpeaker = !isLast && presentationMode === "group" &&
+      sections[activeIndex + 1].speaker !== current.speaker
+      ? speakerLabel(sections[activeIndex + 1].speaker)
+      : "";
     return (
-      <main
-        className={`present-screen present-screen--${pace} present-screen--${displayStyle} timer-color--${colorMode} ${cueActive ? "present-screen--cue" : ""} ${quietMode ? "present-screen--quiet" : ""}`}
-        onClick={revealExactTime}
-      >
+      <main className="present-screen">
         <div className="present-screen__top">
           <Button className="present-home-button" icon="home" onClick={goHome} variant="ghost">
             Home
           </Button>
-          <div className="present-screen__meta">
-            {(displayStyle !== "minimal" || quietMode) && (
-              <span>Section {activeIndex + 1} of {sections.length}</span>
-            )}
-            {displayStyle === "detailed" && !quietMode && (
-              <span>Presentation remaining: {totalElapsed > totalTarget ? `+${formatTime(totalElapsed - totalTarget)} over` : formatTime(totalTarget - totalElapsed)}</span>
-            )}
-          </div>
-          <button
-            aria-pressed={quietMode}
-            className="present-quiet-toggle"
-            onClick={(event) => {
-              event.stopPropagation();
-              setQuietMode((value) => !value);
-            }}
-            type="button"
-          >
-            {quietMode ? "Show timing" : "Quiet view"}
-          </button>
         </div>
 
-        <div className="present-actions" onClick={(event) => event.stopPropagation()}>
+        <section className="present-stage">
+          <h1>{current.name}</h1>
+          {presentationMode === "group" && <p className="present-speaker">{speakerLabel(current.speaker)}</p>}
+          <div className="present-countdown" role="timer" aria-label={remaining < 0 ? "Section overtime" : "Section remaining"}>
+            {remaining < 0 ? `+${formatTime(Math.floor(-remaining))}` : formatTime(Math.ceil(remaining))}
+          </div>
+          {liveFeedback.configured && (
+            <LiveCueToggle
+              enabled={liveFeedback.enabled}
+              accessCode={aiAccessCode}
+              onAccessCodeChange={setAiAccessCode}
+              onToggle={(enabled) => {
+                liveFeedback.setEnabled(enabled);
+                speechCoach.setEnabled(enabled && speechCoach.available);
+              }}
+              needsCode={liveFeedback.needsCode}
+            />
+          )}
+          <div className="present-cue" role="status" aria-atomic="true">
+            {cue || liveFeedback.error || microphoneStatus}
+          </div>
+        </section>
+
+        <div className="present-actions">
           <Button ariaLabel="Go back to setup" icon="edit" onClick={resetToSetup} variant="ghost">
             Setup
           </Button>
           <Button ariaLabel="Restart current section" icon="restart" onClick={restartCurrentSection} variant="ghost">
             Restart
           </Button>
-          <Button
-            icon={isRunning ? "pause" : "play"}
-            onClick={toggleTimer}
-            variant="ghost"
-          >
+          <Button icon={isRunning ? "pause" : "play"} onClick={toggleTimer} variant="ghost">
             {isRunning ? "Pause" : "Resume"}
           </Button>
         </div>
-
-        <section className="present-stage" key={current.id}>
-          {presentationMode === "group" && (
-            <span className="present-speaker">
-              <small>Presenting</small>
-              <strong>{speakerLabel(current.speaker)}</strong>
-            </span>
-          )}
-          <h1>{current.name}</h1>
-          {showTiming && <p className="present-remaining-total">Presentation remaining: {totalElapsed > totalTarget ? `+${formatTime(totalElapsed - totalTarget)} over` : formatTime(totalTarget - totalElapsed)}</p>}
-          <div className="present-progress" aria-label={`${Math.round(progress)} percent of section target`}>
-            <span style={{ width: `${progress}%` }} />
-          </div>
-          <div className={`present-exact-time ${exactTimeVisible || showTiming ? "present-exact-time--visible" : ""}`}>
-            {isOver && !quietMode
-              ? `Section over by +${formatTime(sectionElapsed - current.target)}`
-              : `Section remaining: ${formatTime(current.target - sectionElapsed)}`}
-          </div>
-          {quietMode && !exactTimeVisible && (
-            <span className="present-quiet-hint">Timing hidden · tap to peek</span>
-          )}
-          {displayStyle === "detailed" && !quietMode && (
-            <div className="present-detail-status">
-              {isOver ? "Over target" : progress >= 80 ? "Approaching target" : "On pace"}
-            </div>
-          )}
-          {displayStyle === "minimal" && !quietMode && isOver && !exactTimeVisible && (
-            <span className="present-overtime">+{formatTime(sectionElapsed - current.target)}</span>
-          )}
-          {!isLast && presentationMode === "group" ? (
-            <div className="present-next present-next--speaker">
-              <small>Up next</small>
-              <strong>{speakerLabel(sections[activeIndex + 1].speaker)}</strong>
-              <span>
-                {sections[activeIndex + 1].name}
-                {displayStyle === "detailed" && !quietMode && ` · ${formatTime(sections[activeIndex + 1].target)}`}
-              </span>
-            </div>
-          ) : !isLast ? (
-            <div className="present-next">
-              <span>
-                Next: {sections[activeIndex + 1].name}
-                {displayStyle === "detailed" && !quietMode && ` · ${formatTime(sections[activeIndex + 1].target)}`}
-              </span>
-            </div>
-          ) : (
-            <div className="present-next"><span>Final section</span></div>
-          )}
-        </section>
+        <button className="present-advance" onClick={nextPresentationSection} type="button">
+          <span>
+            {isLast ? "Finish presentation" : "Next section"}
+            {nextSpeaker && <small>{nextSpeaker}</small>}
+          </span>
+          <Icon name="chevron-right" size={24} />
+        </button>
 
         {presentExitDestination && (
-          <ConfirmDialog title="Exit live presentation?" body="Your current live timing results are not saved. Keep presenting to preserve your running timer." cancelLabel="Keep presenting" confirmLabel="Exit presentation" danger onCancel={() => setPresentExitDestination(null)} onConfirm={() => { const destination=presentExitDestination; setPresentExitDestination(null); clock.current.since=null; setIsRunning(false); setAutosaveOn(false); setScreen(destination === "setup" ? "setup" : "concepts"); }}/>
+          <ConfirmDialog title="Exit live presentation?" body="This run won’t be saved." cancelLabel="Keep presenting" confirmLabel="Exit presentation" danger onCancel={() => setPresentExitDestination(null)} onConfirm={() => { const destination=presentExitDestination; setPresentExitDestination(null); clock.current.since=null; setIsRunning(false); setAutosaveOn(false); setScreen(destination === "setup" ? "setup" : "concepts"); }}/>
         )}
-        {!isRunning && <div className="present-paused">Paused</div>}
-
-        <button
-          className="present-advance"
-          onClick={(event) => {
-            event.stopPropagation();
-            nextPresentationSection();
-          }}
-          type="button"
-        >
-          <span>{isLast ? "Finish presentation" : "Next section"}</span>
-          <Icon name="chevron-right" size={24} />
-          <small>Advance when you are ready</small>
-        </button>
       </main>
     );
   }
@@ -2508,14 +2260,13 @@ export default function App() {
     const liveTotal = actualTimes.reduce((total, value) => total + (value || 0), 0);
     const liveDifference = liveTotal - totalTarget;
     const summaryLine = Math.abs(liveDifference) <= 1
-      ? "You finished right on target."
-      : `You finished ${formatTime(Math.abs(liveDifference))} ${liveDifference > 0 ? "over" : "early"}.`;
+      ? "On target"
+      : `${formatTime(Math.abs(liveDifference))} ${liveDifference > 0 ? "over" : "early"}`;
     return (
       <main className={`app-shell presentation-summary-screen mode--${presentationMode}`}>
         <AppHeader account={account} onAccount={() => openAccount("presentation-summary")} onHome={goHome} />
         <section className="page-content">
-          <span className="eyebrow">Presentation complete</span>
-          <h1>Nicely done.</h1>
+          <h1>Presentation complete</h1>
           <p className="review-title">{title}</p>
 
           <div className="live-summary">
@@ -2525,6 +2276,11 @@ export default function App() {
             <p>{summaryLine}</p>
           </div>
 
+          {speechCoach.segments.length > 0 && (
+            <CoachReport metrics={speechMetrics} transcript={speechCoach.transcript}
+              accessCode={aiAccessCode} onAccessCodeChange={setAiAccessCode}
+              feedback={rehearsalFeedback} onFeedback={setRehearsalFeedback} />
+          )}
           <button
             aria-expanded={showLiveBreakdown}
             className="breakdown-toggle"
@@ -2547,11 +2303,6 @@ export default function App() {
               ))}
             </div>
           )}
-
-          <p className="results-not-saved">
-            <Icon name="clock" size={16} />
-            These times show only on this screen. Save setup stores your presentation setup, not this run.
-          </p>
 
           {savePanel}
         </section>
@@ -2578,6 +2329,7 @@ export default function App() {
             Home
           </Button>
         </header>
+        {coachDock}
         <section className="timer-content">
           <div className="timer-position">
             <span>{isLast ? "Last section" : `Section ${activeIndex + 1} of ${sections.length}`}</span>
@@ -2585,14 +2337,7 @@ export default function App() {
           </div>
           <div className="total-progress"><span style={{ width: `${Math.min(100, (totalElapsed / totalTarget) * 100)}%` }} /></div>
           <div className="current-section rehearsal-section-transition" key={`section-heading-${current.id}`}>
-            <div className="eyebrow">
-              {presentationMode === "group" ? (
-                <>
-                  <span>Presenting</span>
-                  <strong>{speakerLabel(current.speaker)}</strong>
-                </>
-              ) : "Now presenting"}
-            </div>
+            {presentationMode === "group" && <div className="eyebrow"><strong>{speakerLabel(current.speaker)}</strong></div>}
             <h1>{current.name}</h1>
           </div>
           <div
@@ -2603,7 +2348,7 @@ export default function App() {
             <div className="timer-dial__inner">
               <span>{isOver ? "Section over by" : "Section remaining"}</span>
               <strong>{isOver ? "+" : ""}{formatTime(Math.abs(remaining))}</strong>
-              <small>{isRunning ? "Timer running" : "Paused"}</small>
+              {!isRunning && <small>Paused</small>}
             </div>
           </div>
           {isOver && (
@@ -2613,7 +2358,7 @@ export default function App() {
             <div className="next-speaker">
               <span>Up next</span>
               <strong>{speakerLabel(sections[activeIndex + 1].speaker)}</strong>
-              <small>Next section · {sections[activeIndex + 1].name}</small>
+              <small>{sections[activeIndex + 1].name}</small>
             </div>
           )}
           <div className="timer-controls">
@@ -2669,9 +2414,7 @@ export default function App() {
               role="dialog"
             >
               <h2 id="rehearsal-confirm-title">Return to setup?</h2>
-              <p id="rehearsal-confirm-description">
-                Your current rehearsal progress will be discarded.
-              </p>
+              <p id="rehearsal-confirm-description">This run won’t be saved.</p>
               <div>
                 <Button
                   className="button--full"
@@ -2696,6 +2439,17 @@ export default function App() {
   }
 
   const actualTotal = actualTimes.reduce((total, value) => total + (value || 0), 0);
+  const rehearsalSpeechSections = speechMetrics.sections
+    .slice(0, rehearsalIncomplete ? rehearsalEndIndex + 1 : sections.length)
+    .map(({ id, name, actual, target, words }) => ({
+      id, name, actualSeconds: actual, targetSeconds: target, capturedUnits: words,
+      capturedSeconds: speechCoach.captureSecondsBySection[id] ?? 0,
+      transcript: rehearsalTranscriptEdits[id] ?? speechCoach.segments
+        .filter((segment) => segment.sectionId === id).map((segment) => segment.text).join(" "),
+    }));
+  const speechFeedback = buildSpeechFeedback(rehearsalSpeechSections, speechMetrics.language);
+  const speechSuggestions = speechFeedback.suggestions.length || rehearsalFeedback || !speechFeedback.practicePrompt
+    ? speechFeedback.suggestions : [speechFeedback.practicePrompt];
   const totalDifference = actualTotal - totalTarget;
   // Only sections that were fully finished are compared against their targets.
   const finishedCount = rehearsalIncomplete ? rehearsalEndIndex : sections.length;
@@ -2728,12 +2482,11 @@ export default function App() {
         <p className="review-title">{title}</p>
         {rehearsalIncomplete ? (
           <p className="incomplete-note" role="status">
-            <Icon name="warning" size={16} /> Incomplete rehearsal · ended during section {rehearsalEndIndex + 1} of {sections.length}.
-            Times you recorded are kept below.
+            <Icon name="warning" size={16} /> Ended in section {rehearsalEndIndex + 1} of {sections.length}
           </p>
         ) : (
           <p className="complete-note" role="status">
-            <Icon name="check" size={16} /> Complete rehearsal{sections.length > 1 && ` · all ${sections.length} sections`}
+            <Icon name="check" size={16} /> Rehearsal complete
           </p>
         )}
 
@@ -2753,23 +2506,35 @@ export default function App() {
                 : `${totalDifference > 0 ? "+" : "−"}${formatTime(Math.abs(totalDifference))} ${totalDifference > 0 ? "over" : "under"}`}
             </div>
           )}
-          <small>{formatTime(totalTarget)} target{rehearsalIncomplete && " for the full presentation"}</small>
+          <small>{formatTime(totalTarget)} target</small>
         </div>
 
+        <CoachReport key={currentRehearsalId} metrics={speechMetrics} transcript={speechCoach.transcript}
+          script={speechScript}
+          accessCode={aiAccessCode} onAccessCodeChange={setAiAccessCode}
+          feedback={rehearsalFeedback} onFeedback={setRehearsalFeedback}
+          rehearsal={{
+            sections: rehearsalSpeechSections,
+            speechSuggestions,
+            transcriptPending: speechCoach.transcriptPending,
+            onTranscriptChange: (id, transcript) =>
+              setRehearsalTranscriptEdits((current) => ({ ...current, [id]: transcript })),
+          }} />
+        <SaveRehearsalPanel saved={savedHistoryRunId === currentRehearsalId}
+          savingError={historySaveError} saveTranscript={saveHistoryTranscript}
+          setSaveTranscript={setSaveHistoryTranscript} onSave={() => saveRehearsalHistory(speechSuggestions)}
+          transcriptPending={speechCoach.transcriptPending}
+          hasUnsavedFeedback={Boolean(rehearsalFeedback && savedRehearsalFeedback.current !== rehearsalFeedback)} />
+        <HistoryPanel runs={presentationHistory} hints={historyHints}
+          onDelete={deleteHistoryRun} onClear={clearPresentationHistory} compact />
         {presentationMode === "group" && (
           <section className="speaker-results">
             <div className="result-heading">
-              <div>
-                <h2>Speaking time</h2>
-                <span>Compare pacing across the team</span>
-              </div>
+              <h2>Speaking time</h2>
               <span>Actual / target</span>
             </div>
-            {rehearsalIncomplete && (
-              <p className="results-note">Only sections you finished are compared.</p>
-            )}
             {speakerResults.length === 0 && (
-              <p className="results-note">No speaker finished a full section before the rehearsal ended.</p>
+              <p className="results-note">No completed sections</p>
             )}
             <div className="speaker-chart">
               {speakerResults.map((result) => {
@@ -2799,7 +2564,6 @@ export default function App() {
 
         <div className="result-heading">
           <h2>Section breakdown</h2>
-          <span>±10s is on time</span>
         </div>
         <div className="result-list">
           {sections.map((section, index) => {
@@ -2833,10 +2597,6 @@ export default function App() {
             );
           })}
         </div>
-        <p className="results-not-saved">
-          <Icon name="clock" size={16} />
-          These times show only on this screen. Save setup stores your presentation setup, not this run.
-        </p>
         {savePanel}
       </section>
       <div className="review-actions">

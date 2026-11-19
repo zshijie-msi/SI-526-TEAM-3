@@ -1,0 +1,158 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import sectionPlan from "../api/section-plan.ts";
+import rehearsalFeedback from "../api/ai-feedback.ts";
+
+const accessCode = "test-code-for-privately-testing-coaching";
+function response() {
+  const result = {};
+  const res = {
+    setHeader() {},
+    status(status) { result.status = status; return res; },
+    json(body) { result.body = body; },
+  };
+  return { res, result };
+}
+
+async function post(handler, body, code = accessCode) {
+  const { res, result } = response();
+  await handler({ method: "POST", headers: { "x-ai-demo-code": code }, body }, res);
+  return result;
+}
+
+test("the five-minute flow validates the time budget and never calls a model without preview access", async (t) => {
+  process.env.AI_FEEDBACK_ENABLED = "true";
+  process.env.AI_DEMO_ACCESS_CODE = accessCode;
+  process.env.AI_GATEWAY_API_KEY = "test-key";
+  t.after(() => {
+    delete process.env.AI_FEEDBACK_ENABLED;
+    delete process.env.AI_DEMO_ACCESS_CODE;
+    delete process.env.AI_GATEWAY_API_KEY;
+  });
+
+  const providerRequests = [];
+  let plan = [
+    { name: "Main point", purpose: "Explain your main point.", seconds: 180 },
+    { name: "Close", purpose: "Summarize your takeaway.", seconds: 60 },
+  ];
+  t.mock.method(globalThis, "fetch", async (url, request) => {
+    assert.equal(url, "https://ai-gateway.vercel.sh/v1/chat/completions");
+    const body = JSON.parse(request.body);
+    assert.equal(body.model, "alibaba/qwen3.7-flash");
+    assert.equal(body.reasoning.effort, "none");
+    assert.equal(body.response_format.type, "json_schema");
+    const input = JSON.parse(body.messages[1].content);
+    providerRequests.push(input);
+    const content = input.sections?.[0]?.actualSeconds
+      ? { summary: "Intro ran 15 seconds long.", nextSteps: ["Cut one detail from Intro."] }
+      : { sections: plan };
+    return Response.json({ choices: [{ message: { content: JSON.stringify(content) } }] });
+  });
+
+  const input = { targetSeconds: 300, title: "", sections: [{ name: "Intro", seconds: 60 }] };
+  assert.equal((await post(sectionPlan, input, "wrong")).status, 403);
+  assert.equal(providerRequests.length, 0);
+
+  const result = await post(sectionPlan, input);
+  assert.equal(result.status, 200);
+  assert.equal(result.body.sections[0].existingIndex, 0);
+  assert.equal(providerRequests[0].secondsToAllocate, 240);
+  assert.equal(result.body.sections.reduce((sum, item) => sum + item.seconds, 0), 300);
+
+  plan = [{ name: "Main point", purpose: "Explain the idea.", seconds: 299 }];
+  assert.equal((await post(sectionPlan, { ...input, sections: [] })).status, 502);
+  assert.equal(providerRequests[1].secondsToAllocate, 300);
+
+  const timingOnly = await post(rehearsalFeedback, {
+    transcript: "", outline: "", sections: [{ name: "Intro", actual: 75, target: 60 }],
+  });
+  assert.equal(timingOnly.status, 200);
+  assert.equal(providerRequests[2].transcript, null);
+  assert.deepEqual(timingOnly.body.nextSteps, ["Cut one detail from Intro."]);
+
+  const script = "We will describe the campus shuttle problem. Then we explain the proposed night route.";
+  plan = [
+    { name: "Shuttle problem", purpose: "Explain the wait", seconds: 80 },
+    { name: "Night route", purpose: "Describe the route", seconds: 35 },
+  ];
+  const scriptedPlan = await post(sectionPlan, {
+    targetSeconds: 120, title: "Campus shuttle", sections: [{ name: "Intro", seconds: 120 }], script,
+  });
+  assert.equal(scriptedPlan.status, 200);
+  assert.equal(scriptedPlan.body.replacesExisting, true);
+  assert.deepEqual(scriptedPlan.body.sections.map(({ name }) => name), ["Shuttle problem", "Night route"]);
+  assert.equal(scriptedPlan.body.sections.reduce((sum, item) => sum + item.seconds, 0), 120);
+  assert.ok(scriptedPlan.body.sections[0].seconds > scriptedPlan.body.sections[1].seconds);
+  assert.deepEqual(providerRequests[3], {
+    title: "Campus shuttle", script, sections: [{ name: "Intro", seconds: 120 }],
+    retainExisting: false, secondsToAllocate: 120,
+  });
+});
+
+test("rehearsal feedback resolves citations itself and keeps usable items", async (t) => {
+  process.env.AI_FEEDBACK_ENABLED = "true";
+  process.env.AI_DEMO_ACCESS_CODE = accessCode;
+  process.env.AI_GATEWAY_API_KEY = "test-key";
+  t.after(() => {
+    delete process.env.AI_FEEDBACK_ENABLED;
+    delete process.env.AI_DEMO_ACCESS_CODE;
+    delete process.env.AI_GATEWAY_API_KEY;
+  });
+  let calls = 0;
+  let temporarilyUnavailable = true;
+  let expectedScript = "";
+  const grounded = {
+    sectionId: 2, excerptId: 1, quote: "a model-paraphrased quote",
+    suggestion: "Name the kind of bug the new test would catch.",
+  };
+  let returnedSuggestions = [
+    { ...grounded, excerptId: 11 },
+    { ...grounded, suggestion: "nextSteps: [some malformed markup]" },
+    { ...grounded, suggestion: "Say detect defects sooner to align with the optional outline." },
+    { ...grounded, suggestion: "Say that the test catches 50 percent more bugs." },
+    grounded,
+  ];
+  t.mock.method(globalThis, "fetch", async (_url, request) => {
+    calls++;
+    const input = JSON.parse(JSON.parse(request.body).messages[1].content);
+    assert.deepEqual(input, {
+      sections: [
+        { id: 1, name: "Intro", actualSeconds: 12, targetSeconds: 20,
+          excerpts: [{ id: 1, text: "This is our team's new test suite." }] },
+        { id: 2, name: "Approach", actualSeconds: null, targetSeconds: null,
+          excerpts: [{ id: 1, text: "It will help us find bugs faster." }] },
+      ],
+      optionalOutline: expectedScript ? null : "Approach: describe the test",
+      ...(expectedScript ? { optionalScript: expectedScript } : {}),
+    });
+    if (temporarilyUnavailable) {
+      temporarilyUnavailable = false;
+      return Response.json({ error: { code: "service_unavailable_error" } }, { status: 503 });
+    }
+    return Response.json({ choices: [{ message: { content: JSON.stringify({ suggestions: returnedSuggestions }) } }] });
+  });
+
+  const input = {
+    mode: "content", outline: "Approach: describe the test", sections: [
+      { id: 1, name: "Intro", transcript: "This is our team's new test suite.", actualSeconds: 12, targetSeconds: 20 },
+      { id: 2, name: "Approach", transcript: "It will help us find bugs faster." },
+      { id: 3, name: "Close", transcript: "" },
+    ],
+  };
+  const empty = await post(rehearsalFeedback, { ...input, sections: [input.sections[2]] });
+  assert.equal(empty.status, 422);
+  assert.equal(calls, 0);
+  const result = await post(rehearsalFeedback, input);
+  assert.equal(result.status, 200);
+  assert.equal(calls, 2);
+  assert.deepEqual(result.body.suggestions, [{
+    sectionName: "Approach", quote: "It will help us find bugs faster.", suggestion: grounded.suggestion,
+  }]);
+  expectedScript = "The test suite should help the team detect defects sooner and improve coverage.";
+  const withScript = await post(rehearsalFeedback, { ...input, script: expectedScript });
+  assert.equal(withScript.status, 200);
+  assert.deepEqual(withScript.body, result.body);
+  returnedSuggestions = [{ ...grounded, excerptId: 11 }];
+  assert.deepEqual(await post(rehearsalFeedback, { ...input, script: expectedScript }),
+    { status: 200, body: { suggestions: [] } });
+});

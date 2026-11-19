@@ -1,0 +1,65 @@
+.present-ai {
+  width: min(100%, 275px);
+}
+
+.present-ai-toggle {
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 1px solid #aec1cc;
+  border-radius: 999px;
+  color: #244969;
+  background: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.present-ai-toggle[aria-pressed="true"] {
+  border-color: #226668;
+  background: #226668;
+  color: #fff;
+}
+
+.present-ai-toggle:disabled {
+  opacity: .55;
+  cursor: default;
+}
+
+.present-ai-access {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.present-ai-access label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.present-ai-access input {
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid #aec1cc;
+  border-radius: 8px;
+  background: #fff;
+  color: #102a43;
+  font: inherit;
+}
+
+.present-ai-access p {
+  margin: 0;
+  color: #9b452e;
+  font-size: 14px;
+}
+
+.present-cue {
+  min-height: 1.4em;
+  max-width: 100%;
+  color: #20585c;
+  font-size: clamp(16px, 4.7vw, 20px);
+  font-weight: 700;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}

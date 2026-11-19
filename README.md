@@ -32,3 +32,11 @@ Build: `npm run build`.
 ## Implementation
 
 Figma Make-only Vite plugins were removed to make the app standalone. The GitHub project's previous timestamp-based timer technique has been adapted for Rehearse and Present. Existing `main` is preserved for code review.
+
+## Sprint 4 AI Coach
+
+The Sprint 4 preview supports an optional AI section plan, rehearsal review, and brief live cues. Enter an overall target, then open **Suggest sections with AI** in Setup. Preview the result before applying it. Rehearsal feedback works with timing alone, and microphone transcription is opt-in.
+
+The preview uses Qwen 3.7 Flash through Vercel AI Gateway. Requests run server-side behind the preview access code. The timer, browser speech recognition, and local rehearsal history work independently.
+
+[Preview setup and configuration](docs/SPRINT4-AI-INTEGRATION.md)
