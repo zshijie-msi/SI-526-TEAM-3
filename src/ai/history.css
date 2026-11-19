@@ -21,11 +21,7 @@
 .history-primary:focus-visible,.history-delete:focus-visible,.history-clear:focus-visible{outline:2px solid #2b7981;outline-offset:3px}
 .history-good{color:#1c7760!important;font-size:12px!important}
 .history-warning{color:#a04728!important;font-size:12px!important}
-.present-history-hint{position:fixed;z-index:68;left:50%;bottom:90px;transform:translateX(-50%);width:min(420px,calc(100vw - 24px));display:flex;gap:12px;justify-content:space-between;background:#213d50;color:#fff;border:1px solid #5e8190;border-radius:12px;padding:12px 14px;text-align:left;box-shadow:0 8px 26px #18314b50}
-.present-history-hint strong{color:#c8e9d8;font-size:11px}
-.present-history-hint p{font-size:13px;line-height:1.4;margin:5px 0;color:#fff}
-.present-history-hint button{flex:0 0 24px;border:0;background:transparent;color:#fff;font-size:22px;cursor:pointer}
-@media(max-width:600px){.history-panel,.history-save{padding:14px;margin:14px 0}.present-history-hint{bottom:64px}}
+@media(max-width:600px){.history-panel,.history-save{padding:14px;margin:14px 0}}
 
 .history-record-text,.history-saved-feedback li{font-size:13px;line-height:1.5;overflow-wrap:anywhere}
 .history-record-text{white-space:pre-wrap;padding:0 10px}

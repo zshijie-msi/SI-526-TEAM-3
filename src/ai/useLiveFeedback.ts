@@ -1,16 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { SpeechSegment } from "./metrics";
-import type { SectionHint } from "./historyInsights";
-
-export interface LiveCue {
-  text: string;
-  evidence: string;
-  source: "mock" | "model";
-}
+import type { liveRehearsalContext } from "./historyInsights";
 
 export function useLiveFeedback({
   running, screen, segments, interim, language, sectionId, sectionName,
-  sectionElapsed, target, outline, historyHints, accessCode, setAccessCode,
+  sectionElapsed, target, script, rehearsalContext, accessCode, onAccessDenied,
 }: {
   running: boolean;
   screen: string;
@@ -21,112 +15,129 @@ export function useLiveFeedback({
   sectionName: string;
   sectionElapsed: number;
   target: number;
-  outline: string;
-  historyHints: SectionHint[];
+  script: string;
+  rehearsalContext?: ReturnType<typeof liveRehearsalContext>;
   accessCode: string;
-  setAccessCode(code: string): void;
+  onAccessDenied(): void;
 }) {
   const configured = import.meta.env.VITE_AI_LIVE_FEEDBACK_ENABLED === "true" ||
     import.meta.env.VITE_AI_LIVE_MOCK === "true";
-  const mockMode = import.meta.env.VITE_AI_LIVE_MOCK === "true";
   const [enabled, setEnabled] = useState(false);
-  const [cue, setCue] = useState<(LiveCue & { sectionId: number }) | null>(null);
+  const [cue, setCue] = useState<{ text: string; sectionId: number } | null>(null);
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const latest = useRef({
-    running, screen, segments, interim, language, sectionId, sectionName,
-    sectionElapsed, target, outline, historyHints, accessCode,
-  });
-  latest.current = {
-    running, screen, segments, interim, language, sectionId, sectionName,
-    sectionElapsed, target, outline, historyHints, accessCode,
-  };
-  const lastText = useRef("");
-  const lastRequestAt = useRef(0);
-  const pending = useRef(false);
+  const [rejectedCode, setRejectedCode] = useState("");
+  const [revision, setRevision] = useState(0);
+  const latest = useRef({ segments, interim, language, sectionName, sectionElapsed, target, script, rehearsalContext, onAccessDenied });
+  latest.current = { segments, interim, language, sectionName, sectionElapsed, target, script, rehearsalContext, onAccessDenied };
+
+  const lastChecks = useRef(new Map<number, { text: string | null; at: number; lastCue: string }>());
   const runRequests = useRef(0);
+  const code = accessCode.trim();
+  const needsCode = code.length < 24 || code === rejectedCode;
+
+  const restartSection = () => {
+    setCue(null);
+    setError("");
+    const last = lastChecks.current.get(sectionId);
+    if (last) lastChecks.current.set(sectionId, { text: null, at: last.at, lastCue: "" });
+    setRevision((current) => current + 1);
+  };
 
   const reset = () => {
     setEnabled(false);
     setCue(null);
     setError("");
-    lastText.current = "";
-    lastRequestAt.current = 0;
+    lastChecks.current.clear();
     runRequests.current = 0;
   };
 
   useEffect(() => {
-    if (!configured || !enabled || !running || screen !== "present") {
-      setBusy(false);
-      return;
-    }
+    if (!configured || !enabled || !running || screen !== "present" || needsCode) return;
     const controller = new AbortController();
+    let pending = false;
+    let stopChecks = false;
+
     const tick = async () => {
+      if (pending || stopChecks || controller.signal.aborted || runRequests.current >= 8) return;
       const input = latest.current;
-      if (pending.current || !input.running || input.accessCode.trim().length < 24 || runRequests.current >= 8) return;
-      const text = (input.segments.filter(x => x.sectionId === input.sectionId).map(x => x.text).join(" ") + " " + input.interim).trim();
-      if (text.length < 30 || text === lastText.current) return;
-      if (Date.now() - lastRequestAt.current < 30_000) return;
-      lastRequestAt.current = Date.now();
-      lastText.current = text;
-      pending.current = true;
+      const speech = input.segments.filter((part) => part.sectionId === sectionId).map((part) => part.text);
+      const transcript = [...speech, input.interim].join(" ").trim().slice(-4000);
+      const script = input.script.trim().slice(0, 12_000);
+      const hasContext = Boolean(script || input.rehearsalContext?.suggestions.length ||
+        input.rehearsalContext?.attempts.some((attempt) => attempt.transcript));
+      const last = lastChecks.current.get(sectionId);
+      const now = Date.now();
+      if (last && now - last.at < 16_000) return;
+      if (last?.text != null && (transcript === last.text || transcript.length < 30)) return;
+      if (transcript.length < 30 && !hasContext) return;
+
+      lastChecks.current.set(sectionId, { text: transcript, at: now, lastCue: last?.lastCue ?? "" });
+      pending = true;
       runRequests.current++;
-      setBusy(true);
       try {
         const response = await fetch("/api/live-coach", {
           method: "POST", signal: controller.signal,
-          headers: { "Content-Type":"application/json", "X-AI-Demo-Code":input.accessCode.trim() },
+          headers: { "Content-Type": "application/json", "X-AI-Demo-Code": code },
           body: JSON.stringify({
-            transcript:text.slice(-4000), language:input.language,
-            outline:input.outline.slice(0,2000),
-            section:input.sectionName, sectionElapsed:input.sectionElapsed,
-            target:input.target,
-            historyHints:input.historyHints.slice(0,4).map(h=>h.evidence),
+            transcript, language: input.language, script,
+            section: input.sectionName.slice(0, 100),
+            sectionElapsed: input.sectionElapsed,
+            target: input.target,
+            rehearsal: input.rehearsalContext,
           }),
         });
-        const body = await response.json() as {
-          cue?: string; confidence?: string; evidence?: string;
-          source?: string; error?: string;
-        };
-        if (!response.ok) throw Error(body.error || "Live analysis unavailable");
-        // Discard feedback produced for a chapter that has already ended.
-        // A late response must never interrupt a different speaker in Present.
-        if (controller.signal.aborted || latest.current.sectionId !== input.sectionId ||
-            latest.current.screen !== input.screen || !latest.current.running) return;
-        if (body.cue?.trim() && body.confidence !== "low") {
-          const next = {
-            sectionId: input.sectionId,
-            text:body.cue.slice(0,110),
-            evidence:(body.evidence ?? "").slice(0,160),
-            source: body.source === "mock" ? "mock" as const : "model" as const,
-          };
-          setCue(next);
+        if (controller.signal.aborted) return;
+        if (response.status === 403) {
+          setRejectedCode(code);
+          setEnabled(false);
+          setError("Check the access code");
+          latest.current.onAccessDenied();
+          return;
+        }
+        if (response.status === 429) {
+          lastChecks.current.set(sectionId, { text: null, at: now, lastCue: last?.lastCue ?? "" });
+          return;
+        }
+        if (!response.ok) {
+          setError("AI cues unavailable");
+          stopChecks = response.status === 503;
+          return;
+        }
+        const body = await response.json() as { cue?: string; confidence?: string };
+        if (controller.signal.aborted) return;
+        const text = typeof body.cue === "string" ? body.cue.trim() : "";
+        if (text && text.length <= 58 && body.confidence !== "low" && text !== last?.lastCue) {
+          lastChecks.current.set(sectionId, { text: transcript, at: now, lastCue: text });
+          setCue({ sectionId, text });
         }
         setError("");
-      } catch (error) {
-        if (!controller.signal.aborted) setError(
-          error instanceof Error ? error.message : "Live analysis unavailable",
-        );
+      } catch {
+        if (!controller.signal.aborted) setError("AI cues unavailable");
       } finally {
-        pending.current=false;
-        setBusy(false);
+        pending = false;
       }
     };
-    const timer=window.setInterval(()=>{void tick();},2500);
-    return ()=>{window.clearInterval(timer);controller.abort();};
-  },[configured,enabled,running,screen]);
+
+    const timer = window.setInterval(() => { void tick(); }, 1000);
+    return () => {
+      window.clearInterval(timer);
+      controller.abort();
+    };
+  }, [configured, enabled, running, screen, sectionId, revision, code, needsCode]);
 
   useEffect(() => {
     if (!cue) return;
-    const t=window.setTimeout(()=>setCue(null),7500);
-    return ()=>window.clearTimeout(t);
-  },[cue]);
+    const timeout = window.setTimeout(() => setCue(null), 7000);
+    return () => window.clearTimeout(timeout);
+  }, [cue]);
 
   return {
-    configured,mockMode,enabled,setEnabled: (next: boolean) => {
+    configured, enabled, needsCode, error, reset, restartSection,
+    setEnabled: (next: boolean) => {
       setEnabled(next);
+      setError("");
       if (!next) setCue(null);
-    },accessCode,setAccessCode,
-    cue: enabled && running && cue?.sectionId === sectionId ? cue : null,error,busy,reset,dismiss: () => setCue(null),
+    },
+    cue: enabled && running && cue?.sectionId === sectionId ? cue.text : null,
   };
 }

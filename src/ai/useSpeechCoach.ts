@@ -34,12 +34,10 @@ function recognitionConstructor(): (new () => Recognition) | undefined {
 
 export function useSpeechCoach({
   active,
-  rehearsing,
   sectionId,
   totalElapsed,
 }: {
   active: boolean;
-  rehearsing: boolean;
   sectionId: number;
   totalElapsed: number;
 }) {
@@ -51,7 +49,7 @@ export function useSpeechCoach({
   const relayConfigured = Boolean(relayUrl && import.meta.env.VITE_ASR_RELAY_ENABLED === "true");
   const relayIsMock = import.meta.env.VITE_ASR_RELAY_MODE === "mock";
   const [segments, setSegments] = useState<SpeechSegment[]>([]);
-  const [interim, setInterim] = useState("");
+  const [interim, setInterim] = useState<{ text: string; sectionId: number } | null>(null);
   const [error, setError] = useState("");
   const [listening, setListening] = useState(false);
   const [transcriptPending, setTranscriptPending] = useState(false);
@@ -60,9 +58,8 @@ export function useSpeechCoach({
   const captureRevision = useRef(0);
   const runRevision = useRef(0);
   const draining = useRef<Promise<void> | null>(null);
-  const latest = useRef({ sectionId, totalElapsed });
-  latest.current = { sectionId, totalElapsed };
-  const rehearsalSection = rehearsing ? sectionId : null;
+  const elapsed = useRef(totalElapsed);
+  elapsed.current = totalElapsed;
 
   const available = provider === "browser"
     ? Boolean(recognitionConstructor()) : relayConfigured;
@@ -70,7 +67,7 @@ export function useSpeechCoach({
     runRevision.current++;
     setEnabled(false);
     setSegments([]);
-    setInterim("");
+    setInterim(null);
     setError("");
     setListening(false);
     setTranscriptPending(false);
@@ -81,13 +78,13 @@ export function useSpeechCoach({
     setRestartRevision(captureRevision.current);
     setSegments((current) => current.filter((segment) => segment.sectionId !== sectionId));
     setCaptureSecondsBySection((current) => ({ ...current, [sectionId]: 0 }));
-    setInterim("");
+    setInterim(null);
   };
 
   useEffect(() => {
     if (!enabled || !active || provider !== "browser") {
       setListening(false);
-      setInterim("");
+      setInterim(null);
       return;
     }
     const Constructor = recognitionConstructor();
@@ -110,24 +107,22 @@ export function useSpeechCoach({
     recognition.interimResults = true;
     let audioStartedAt: number | null = null;
     const endAudioCapture = () => {
-      if (audioStartedAt === null || rehearsalSection === null) return;
+      if (audioStartedAt === null) return;
       const seconds = (performance.now() - audioStartedAt) / 1000;
       audioStartedAt = null;
       if (sameRun() && captureRevision.current === restartRevision) {
         setCaptureSecondsBySection((current) => ({
-          ...current, [rehearsalSection]: (current[rehearsalSection] ?? 0) + seconds,
+          ...current, [sectionId]: (current[sectionId] ?? 0) + seconds,
         }));
       }
     };
-    if (rehearsalSection !== null) {
-      recognition.onaudiostart = () => {
-        if (!disposed && !finishCapture && audioStartedAt === null) audioStartedAt = performance.now();
-      };
-      recognition.onaudioend = endAudioCapture;
-    }
+    recognition.onaudiostart = () => {
+      if (!disposed && !finishCapture && audioStartedAt === null) audioStartedAt = performance.now();
+    };
+    recognition.onaudioend = endAudioCapture;
 
     recognition.onresult = (event) => {
-      if (disposed || !sameRun() || (rehearsalSection !== null && captureRevision.current !== restartRevision)) return;
+      if (disposed || !sameRun() || captureRevision.current !== restartRevision) return;
       const finalParts: SpeechSegment[] = [];
       let interimPart = "";
       for (let i = event.resultIndex; i < event.results.length; i += 1) {
@@ -137,8 +132,8 @@ export function useSpeechCoach({
         if (result.isFinal) {
           finalParts.push({
             text: words,
-            sectionId: rehearsalSection ?? latest.current.sectionId,
-            atSecond: latest.current.totalElapsed,
+            sectionId,
+            atSecond: elapsed.current,
             language,
           });
         } else {
@@ -146,7 +141,7 @@ export function useSpeechCoach({
         }
       }
       if (finalParts.length > 0) setSegments((current) => [...current, ...finalParts]);
-      setInterim(interimPart);
+      setInterim(interimPart ? { text: interimPart, sectionId } : null);
     };
 
     recognition.onerror = (event) => {
@@ -183,11 +178,11 @@ export function useSpeechCoach({
         return;
       }
       setListening(false);
-      setInterim("");
+      setInterim(null);
       if (!disposed && !stopForError) restartTimer = window.setTimeout(start, 700);
     };
 
-    if (rehearsalSection !== null && draining.current) {
+    if (draining.current) {
       void draining.current.then(start);
     } else {
       start();
@@ -203,7 +198,7 @@ export function useSpeechCoach({
     return () => {
       endAudioCapture();
       if (restartTimer !== null) window.clearTimeout(restartTimer);
-      if (rehearsalSection === null || !started) {
+      if (!started) {
         detach();
         if (started) {
           try { recognition.stop(); } catch { /* Browser already stopped. */ }
@@ -216,7 +211,7 @@ export function useSpeechCoach({
       if (sameRun()) {
         setTranscriptPending(true);
         setListening(false);
-        setInterim("");
+        setInterim(null);
       }
       let resolveDrain: () => void = () => {};
       draining.current = new Promise<void>((resolve) => { resolveDrain = resolve; });
@@ -230,7 +225,7 @@ export function useSpeechCoach({
       };
       try { recognition.stop(); } catch { finishCapture(); }
     };
-  }, [enabled, active, language, provider, rehearsalSection, restartRevision]);
+  }, [enabled, active, language, provider, sectionId, restartRevision]);
 
   useEffect(() => {
     if (!enabled || !active || provider !== "qwen") return;
@@ -240,30 +235,35 @@ export function useSpeechCoach({
       return;
     }
     setError("");
+    let disposed = false;
     const stop = startRelayRecognition({
       url: relayUrl,
       accessCode: relayCode,
       language,
-      onReady: () => { setListening(true); setError(""); },
+      onReady: () => { if (!disposed) { setListening(true); setError(""); } },
       onFinal: (text, locale) => {
+        if (disposed) return;
+        setInterim(null);
         setSegments((current) => [...current, {
-          text, sectionId: latest.current.sectionId,
-          atSecond: latest.current.totalElapsed, language: locale,
+          text, sectionId,
+          atSecond: elapsed.current, language: locale,
         }]);
       },
-      onPartial: setInterim,
+      onPartial: (text) => { if (!disposed) setInterim({ text, sectionId }); },
       onError: (message) => {
+        if (disposed) return;
         setError(message);
         setListening(false);
         setEnabled(false);
       },
     });
     return () => {
+      disposed = true;
       stop();
       setListening(false);
-      setInterim("");
+      setInterim(null);
     };
-  }, [enabled, active, provider, language, relayCode, relayUrl, relayConfigured]);
+  }, [enabled, active, provider, language, relayCode, relayUrl, relayConfigured, sectionId, restartRevision]);
 
   return {
     available,
@@ -283,7 +283,7 @@ export function useSpeechCoach({
     transcriptPending,
     captureSecondsBySection,
     restartSection,
-    interim,
+    interim: interim?.sectionId === sectionId ? interim.text : "",
     reset,
     transcript: segments.map((segment) => segment.text).join(" "),
   };

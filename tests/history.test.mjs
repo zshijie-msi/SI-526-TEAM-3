@@ -4,7 +4,7 @@ import {
   createRehearsalRun, readHistory, writeHistory, upsertHistory,
   historyForPresentation, historyOwner,
 } from "../src/ai/history.ts";
-import { buildHistoryHints, cueForSection, outlinePointsForSection } from "../src/ai/historyInsights.ts";
+import { buildHistoryHints, liveRehearsalContext } from "../src/ai/historyInsights.ts";
 
 const sections = [{id:1,name:"Intro",target:60,actual:82},{id:2,name:"Results",target:45,actual:35}];
 const metrics = {
@@ -50,22 +50,28 @@ test("transcripts require opt-in, and re-saving the same run doesn't duplicate",
  assert.match(b.sections[0].transcript,/Hello/);
  assert.equal(upsertHistory([a],b).length,1);
 });
-test("at least two consistent overruns produce a grounded Present hint",()=>{
+test("at least two consistent overruns produce a rehearsal history pattern",()=>{
  const runs=[make("a",100),make("b",200)];
- const hints=buildHistoryHints({runs,sections,outline:""});
- const hint=cueForSection(hints,1);
+ const hints=buildHistoryHints({runs,sections});
+ const hint=hints.find((hint) => hint.sectionId === 1);
  assert.equal(hint?.kind,"over-time");
  assert.match(hint?.evidence??"",/2 of 2/);
  assert.equal(buildHistoryHints({runs:runs.slice(0,1),sections}).length,0);
 });
-test("exact text match is cautious and only section-tagged outline points count",()=>{
- assert.deepEqual(outlinePointsForSection("Intro: mention the business model\nResults: discuss earnings", "Intro"),["mention the business model"]);
- const runs=[make("a",100,true),make("b",200,true)];
- const hints=buildHistoryHints({runs,sections,outline:"Intro: mention the business model"});
- const h=hints.find(x=>x.kind==="outline");
- assert.ok(h);
- assert.match(h.evidence,/Exact phrase missing in 2 of 2 transcripts/);
- assert.equal(buildHistoryHints({runs:runs.map(r=>({...r,sections:r.sections.map(s=>({...s,transcript:undefined}))})),sections,outline:"Intro: mention the business model"}).some(x=>x.kind==="outline"),false);
+test("live cues use the same section’s saved runs and honor transcript opt-in", () => {
+  const withoutTranscript = make("current", 200, false);
+  const withTranscript = make("past", 100, true);
+  withTranscript.feedback = { suggestions: [
+    { sectionName: "Intro", suggestion: "Lead with the decision.", quote: "Hello everyone" },
+    { sectionName: "Results", suggestion: "Name the key finding." },
+  ] };
+  const context = liveRehearsalContext([withoutTranscript, withTranscript], sections[0]);
+  assert.equal(context.attempts.length, 2);
+  assert.equal(context.attempts[0].actualSeconds, 82);
+  assert.equal(context.attempts[0].transcript, undefined);
+  assert.match(context.attempts[1].transcript, /Hello everyone/);
+  assert.deepEqual(context.suggestions, ["Lead with the decision."]);
+  assert.equal(liveRehearsalContext([withTranscript], { id: 1, name: "Renamed" }).attempts.length, 0);
 });
 test("corrupt storage does not break the app",()=>{
  assert.deepEqual(readHistory({getItem(){return "{not-json"}}),[]);

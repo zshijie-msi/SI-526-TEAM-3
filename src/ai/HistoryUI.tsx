@@ -125,21 +125,3 @@ export function HistoryPanel({
     </section>
   );
 }
-
-export function PresentHistoryHint({
-  hint, onDismiss,
-}: {
-  hint: SectionHint | null;
-  onDismiss: () => void;
-}) {
-  if (!hint) return null;
-  return (
-    <aside className="present-history-hint" role="status" aria-label="Reminder from prior rehearsals">
-      <div>
-        <strong>Rehearsal reminder</strong>
-        <p>{hint.text}</p>
-      </div>
-      <button type="button" aria-label="Dismiss reminder" onClick={onDismiss}>×</button>
-    </aside>
-  );
-}

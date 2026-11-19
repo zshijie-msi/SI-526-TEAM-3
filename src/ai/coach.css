@@ -80,31 +80,6 @@
   .speech-coach-panel { padding: 12px; max-height: 60vh; }
 }
 
-/* Optional outline on Ready screen. Folds closed until a user asks for it. */
-.speech-coach-notes {
-  margin: 16px 0;
-  padding: 13px 15px;
-  border: 1px solid #d5e4e3;
-  border-radius: 12px;
-  background: #f8fcfb;
-  color: #203741;
-}
-.speech-coach-notes summary { font-size: 14px; font-weight: 650; cursor: pointer; }
-.speech-coach-notes textarea {
-  box-sizing: border-box;
-  display: block;
-  width: 100%;
-  min-height: 92px;
-  margin-top: 10px;
-  padding: 10px;
-  background: #fff;
-  color: #203741;
-  border: 1px solid #b9caca;
-  border-radius: 9px;
-  font: inherit;
-  font-size: 13px;
-  resize: vertical;
-}
 .speech-coach-remote {
   margin-top: 15px;
   padding: 12px;
@@ -194,4 +169,30 @@
 @media (max-width: 620px) {
   .speech-coach-dock { top: 75px; right: 8px; }
   .speech-coach-toggle { box-shadow: 0 3px 9px #18293b22; }
+}
+
+.speech-coach-source {
+  margin: 10px 0;
+  padding: 10px;
+  border: 1px solid #d9e7e7;
+  border-radius: 10px;
+  background: #fbfefd;
+}
+
+.speech-coach-source label {
+  display: block;
+  margin: 5px 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.speech-coach-source select,
+.speech-coach-source input {
+  width: 100%;
+  padding: 9px;
+  border: 1px solid #bfd1d4;
+  border-radius: 7px;
+  background: #fff;
+  color: #172536;
+  font-size: 12px;
 }

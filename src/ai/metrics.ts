@@ -116,6 +116,10 @@ export function livePaceCue(args: {
     if (remaining <= 0) return zh ? "本节已超时。" : "Over section target.";
     if (remaining <= 10) return zh ? "准备收尾。" : "Wrap up this section soon.";
   }
+  return speakingRateCue(sectionWords, sectionElapsed, language);
+}
+
+function speakingRateCue(sectionWords: number, sectionElapsed: number, language: string): string | null {
   // Only the English threshold was informally selected for this prototype.
   // Don't apply it to Chinese characters, French or Spanish speech.
   if (language !== "en-US") return null;
@@ -129,7 +133,18 @@ export function livePaceCue(args: {
   return null;
 }
 
-/** Specific but cautious; no semantic claims without an LLM or outline. */
+/** Keep live timing cues brief and wait until a short section is almost over. */
+export function presentPaceCue({
+  target, sectionElapsed, sectionWords, language,
+}: { target: number; sectionElapsed: number; sectionWords: number; language: string }): string | null {
+  const wrapAt = Math.max(target - 7, target * 0.8);
+  if (target > 0 && sectionElapsed >= wrapAt) {
+    return isChineseLanguage(language) ? "准备收尾" : "Wrap up";
+  }
+  return speakingRateCue(sectionWords, sectionElapsed, language);
+}
+
+/** Specific but cautious local feedback based on timing and recognized words. */
 export function localSuggestions(metrics: SpeechMetrics): string[] {
   const chinese = isChineseLanguage(metrics.language);
   if (metrics.words === 0) return [chinese

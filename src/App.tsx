@@ -2,13 +2,13 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import tickTockIcon from "./assets/tick-tock-icon.png";
 import tickTockWordmark from "./assets/tick-tock-wordmark.png";
 import { CoachDock, CoachReport } from "./ai/CoachUI";
-import { countSpeechUnits, livePaceCue, summarizeSpeech } from "./ai/metrics";
+import { countSpeechUnits, livePaceCue, presentPaceCue, summarizeSpeech } from "./ai/metrics";
 import { useSpeechCoach } from "./ai/useSpeechCoach";
 import { buildSpeechFeedback } from "./ai/speechFeedback";
 import { createRehearsalRun, historyForPresentation, historyOwner, readHistory, upsertHistory, writeHistory, type RehearsalFeedback } from "./ai/history";
-import { buildHistoryHints, cueForSection } from "./ai/historyInsights";
-import { HistoryPanel, PresentHistoryHint, SaveRehearsalPanel } from "./ai/HistoryUI";
-import { LiveCueOverlay } from "./ai/LiveUI";
+import { buildHistoryHints, liveRehearsalContext } from "./ai/historyInsights";
+import { HistoryPanel, SaveRehearsalPanel } from "./ai/HistoryUI";
+import { LiveCueToggle } from "./ai/LiveUI";
 import { useLiveFeedback } from "./ai/useLiveFeedback";
 import { SectionPlan } from "./ai/SectionPlan";
 
@@ -31,8 +31,6 @@ type Screen =
   | "present"
   | "presentation-summary";
 type PresentationMode = "individual" | "group";
-type DisplayStyle = "minimal" | "standard" | "detailed";
-type ColorMode = "muted" | "bright";
 type Account = {
   name: string;
   email: string;
@@ -46,12 +44,6 @@ type SavedPresentation = {
   sections: Section[];
   presentationTarget?: number;
   speakers: string[];
-  displayStyle: DisplayStyle;
-  colorMode: ColorMode;
-  hapticsEnabled: boolean;
-  // Quiet Present view: hides times and ahead/behind status while presenting.
-  quietMode?: boolean;
-  coachOutline?: string;
   speechScript?: string;
 };
 // Story 12 (SCRUM-133): one autosaved draft per mode, per profile (guest included).
@@ -64,11 +56,6 @@ type AutosaveDraft = {
   sections: Section[];
   presentationTarget?: number;
   speakers: string[];
-  displayStyle: DisplayStyle;
-  colorMode: ColorMode;
-  hapticsEnabled: boolean;
-  quietMode?: boolean;
-  coachOutline?: string;
   speechScript?: string;
   aiHistoryId?: string;
   editor: {
@@ -201,11 +188,6 @@ function setupSignature(setup: {
   sections: Section[];
   presentationTarget?: number;
   speakers: string[];
-  displayStyle: DisplayStyle;
-  colorMode: ColorMode;
-  hapticsEnabled: boolean;
-  quietMode?: boolean;
-  coachOutline?: string;
   speechScript?: string;
 }) {
   return JSON.stringify({
@@ -214,11 +196,6 @@ function setupSignature(setup: {
     sections: setup.sections.map(({ id, name, target, speaker }) => ({ id, name, target, speaker: speaker || null })),
     presentationTarget: setup.presentationTarget ?? null,
     speakers: setup.speakers,
-    displayStyle: setup.displayStyle,
-    colorMode: setup.colorMode,
-    hapticsEnabled: setup.hapticsEnabled,
-    quietMode: Boolean(setup.quietMode),
-    coachOutline: (setup.coachOutline ?? "").trim(),
     speechScript: (setup.speechScript ?? "").trim(),
   });
 }
@@ -235,10 +212,6 @@ function readSavedPresentations(): SavedPresentation[] {
         presentationMode: item.presentationMode === "group" ? "group" : "individual",
         speakers: Array.isArray(item.speakers) ? item.speakers : [],
         presentationTarget: Number(item.presentationTarget) > 0 ? Number(item.presentationTarget) : undefined,
-        displayStyle: ["minimal", "standard", "detailed"].includes(item.displayStyle) ? item.displayStyle : "standard",
-        colorMode: item.colorMode === "bright" ? "bright" : "muted",
-        hapticsEnabled: Boolean(item.hapticsEnabled),
-        quietMode: Boolean(item.quietMode),
         updatedAt: Number(item.updatedAt) || Date.now(),
       }));
   } catch {
@@ -478,24 +451,6 @@ const MODES: {
   { id: "group", name: "Group" },
 ];
 
-// SCRUM-156: plain-language names, with what each option shows.
-const DISPLAY_STYLES: {
-  id: DisplayStyle;
-  name: string;
-}[] = [
-  { id: "minimal", name: "Progress only" },
-  { id: "standard", name: "Section time" },
-  { id: "detailed", name: "Time and pace" },
-];
-
-const COLOR_MODES: {
-  id: ColorMode;
-  name: string;
-}[] = [
-  { id: "muted", name: "Light" },
-  { id: "bright", name: "Dark" },
-];
-
 export default function App() {
   const [screen, setScreen] = useState<Screen>("concepts");
   const [presentationMode, setPresentationMode] = useState<PresentationMode>("individual");
@@ -527,13 +482,6 @@ export default function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [draggingId, setDraggingId] = useState<number | null>(null);
   const [dragAnnouncement, setDragAnnouncement] = useState("");
-  // Present-mode display settings belong to each presentation (present-mode-figma-make behaviour).
-  const [displayStyle, setDisplayStyle] = useState<DisplayStyle>("standard");
-  const [colorMode, setColorMode] = useState<ColorMode>("muted");
-  const [showPresentationCustomization, setShowPresentationCustomization] = useState(false);
-  const [hapticsEnabled, setHapticsEnabled] = useState(false);
-  const [quietMode, setQuietMode] = useState(false);
-  const [exactTimeVisible, setExactTimeVisible] = useState(false);
   const [showLiveBreakdown, setShowLiveBreakdown] = useState(false);
   const [confirmingRehearsalSetup, setConfirmingRehearsalSetup] = useState(false);
   const [resumeRehearsalAfterConfirm, setResumeRehearsalAfterConfirm] = useState(false);
@@ -548,7 +496,6 @@ export default function App() {
   const [savedPresentations, setSavedPresentations] = useState<SavedPresentation[]>(readSavedPresentations);
   const [activeSavedId, setActiveSavedId] = useState<string | null>(null);
   const [aiHistoryId, setAiHistoryId] = useState<string>(() => makeId());
-  const [coachOutline, setCoachOutline] = useState("");
   const [speechScript, setSpeechScript] = useState("");
   const [aiAccessCode, setAiAccessCode] = useState("");
   const [historyRuns, setHistoryRuns] = useState(() => readHistory(window.localStorage));
@@ -558,8 +505,6 @@ export default function App() {
   const savedRehearsalFeedback = useRef<RehearsalFeedback>(undefined);
   const [savedHistoryRunId, setSavedHistoryRunId] = useState<string | null>(null);
   const [historySaveError, setHistorySaveError] = useState("");
-  const [historyHintsEnabled, setHistoryHintsEnabled] = useState(true);
-  const [dismissedHintSection, setDismissedHintSection] = useState<number | null>(null);
   const [currentRehearsalId, setCurrentRehearsalId] = useState<string>(() => makeId());
   const [savedSignature, setSavedSignature] = useState<string | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
@@ -574,10 +519,8 @@ export default function App() {
   const [saveConfirmation, setSaveConfirmation] = useState("");
   const nextId = useRef(2);
   const saveFeedbackTimeout = useRef<number | null>(null);
-  const exactTimeTimeout = useRef<number | null>(null);
   // Timer state always comes from elapsed monotonic time, not from interval counts.
   const clock = useRef({ totalMs: 0, sectionMs: 0, since: null as number | null });
-  const lastHapticSection = useRef<number | null>(null);
 
   const sectionsTarget = useMemo(() => sections.reduce((total, section) => total + section.target, 0), [sections]);
   const totalTarget = presentationTarget ?? sectionsTarget;
@@ -587,8 +530,7 @@ export default function App() {
   // These hooks remain mounted across Sprint 3 screens. Neither recognition nor an
   // external model can pause the independent performance.now() clock.
   const speechCoach = useSpeechCoach({
-    active: isRunning && (screen === "rehearse" || screen === "present"),
-    rehearsing: screen === "rehearse",
+    active: isRunning && (screen === "rehearse" || (screen === "present" && !presentExitDestination)),
     sectionId: sections[activeIndex]?.id ?? -1,
     totalElapsed,
   });
@@ -618,21 +560,22 @@ export default function App() {
     [historyRuns, historyOwnerKey, effectiveHistoryId],
   );
   const historyHints = useMemo(
-    () => buildHistoryHints({ runs: presentationHistory, sections, outline: coachOutline }),
-    [presentationHistory, sections, coachOutline],
+    () => buildHistoryHints({ runs: presentationHistory, sections }),
+    [presentationHistory, sections],
+  );
+  const activeSection = sections[activeIndex];
+  const rehearsalContext = useMemo(
+    () => activeSection ? liveRehearsalContext(presentationHistory, activeSection) : undefined,
+    [presentationHistory, activeSection],
   );
   const liveFeedback = useLiveFeedback({
-    running: isRunning && !quietMode, screen, segments: speechCoach.segments,
+    running: isRunning && !presentExitDestination, screen, segments: speechCoach.segments,
     interim: speechCoach.interim, language: speechCoach.language,
-    sectionId: sections[activeIndex]?.id ?? -1, sectionName: sections[activeIndex]?.name ?? "",
-    sectionElapsed, target: sections[activeIndex]?.target ?? 0,
-    outline: coachOutline, historyHints, accessCode: aiAccessCode, setAccessCode: setAiAccessCode,
+    sectionId: activeSection?.id ?? -1, sectionName: activeSection?.name ?? "",
+    sectionElapsed, target: activeSection?.target ?? 0,
+    script: speechScript, rehearsalContext, accessCode: aiAccessCode,
+    onAccessDenied: () => speechCoach.setEnabled(false),
   });
-  const currentHistoryHint =
-    screen === "present" && historyHintsEnabled && sectionElapsed < 9 &&
-    dismissedHintSection !== activeIndex
-      ? cueForSection(historyHints, sections[activeIndex]?.id ?? -1)
-      : null;
 
   const currentSignature = setupSignature({
     title,
@@ -640,11 +583,6 @@ export default function App() {
     sections,
     presentationTarget: presentationTarget ?? undefined,
     speakers,
-    displayStyle,
-    colorMode,
-    hapticsEnabled,
-    quietMode,
-    coachOutline,
     speechScript,
   });
   const hasUnsavedChanges = activeSavedId !== null && currentSignature !== savedSignature;
@@ -688,12 +626,6 @@ export default function App() {
   }, [isRunning, screen]);
 
   useEffect(() => {
-    return () => {
-      if (exactTimeTimeout.current) window.clearTimeout(exactTimeTimeout.current);
-    };
-  }, []);
-
-  useEffect(() => {
     if (!storageSet("tick-tock-presentations", JSON.stringify(savedPresentations))) {
       setStorageError("Couldn’t save presentations.");
     }
@@ -719,11 +651,6 @@ export default function App() {
       sections,
       presentationTarget: presentationTarget ?? undefined,
       speakers,
-      displayStyle,
-      colorMode,
-      hapticsEnabled,
-      quietMode,
-      coachOutline,
       speechScript,
       aiHistoryId,
       editor: {
@@ -746,11 +673,6 @@ export default function App() {
     sections,
     presentationTarget,
     speakers,
-    displayStyle,
-    colorMode,
-    hapticsEnabled,
-    quietMode,
-    coachOutline,
     speechScript,
     aiHistoryId,
     editingId,
@@ -761,22 +683,6 @@ export default function App() {
     isAddingSpeaker,
     newSpeaker,
   ]);
-
-  useEffect(() => {
-    if (
-      screen !== "present" ||
-      !hapticsEnabled ||
-      !isRunning ||
-      !sections[activeIndex] ||
-      sections[activeIndex].target - sectionElapsed > 5 ||
-      sections[activeIndex].target - sectionElapsed <= 0 ||
-      lastHapticSection.current === activeIndex
-    ) {
-      return;
-    }
-    lastHapticSection.current = activeIndex;
-    navigator.vibrate?.([70, 50, 70]);
-  }, [activeIndex, hapticsEnabled, isRunning, screen, sectionElapsed, sections]);
 
   const moveSection = (sectionId: number, targetIndex: number) => {
     setSections((current) => {
@@ -933,7 +839,6 @@ export default function App() {
     setSaveHistoryTranscript(false);
     setHistorySaveError("");
     clock.current = { totalMs: 0, sectionMs: 0, since: performance.now() };
-    lastHapticSection.current = null;
     setActiveIndex(0);
     setSectionElapsed(0);
     setTotalElapsed(0);
@@ -949,23 +854,14 @@ export default function App() {
     speechCoach.reset();
     liveFeedback.reset();
     setRehearsalFeedback(undefined);
-    setDismissedHintSection(null);
     clock.current = { totalMs: 0, sectionMs: 0, since: performance.now() };
-    lastHapticSection.current = null;
     setActiveIndex(0);
     setSectionElapsed(0);
     setTotalElapsed(0);
     setActualTimes([]);
-    setExactTimeVisible(false);
     setShowLiveBreakdown(false);
     setIsRunning(true);
     setScreen("present");
-  };
-
-  const revealExactTime = () => {
-    setExactTimeVisible(true);
-    if (exactTimeTimeout.current) window.clearTimeout(exactTimeTimeout.current);
-    exactTimeTimeout.current = window.setTimeout(() => setExactTimeVisible(false), 3000);
   };
 
   const finishRehearsal = (includeCurrent = true) => {
@@ -1009,13 +905,10 @@ export default function App() {
   };
 
   const nextPresentationSection = () => {
-    setDismissedHintSection(null);
     const { sectionMs, totalMs } = snapshot();
     const nextActual = [...actualTimes];
     nextActual[activeIndex] = sectionMs / 1000;
     setActualTimes(nextActual);
-    setExactTimeVisible(false);
-    if (hapticsEnabled) navigator.vibrate?.(35);
     if (activeIndex === sections.length - 1) {
       clock.current = { totalMs, sectionMs, since: null };
       setTotalElapsed(totalMs / 1000);
@@ -1026,26 +919,24 @@ export default function App() {
       return;
     }
     clock.current = { totalMs, sectionMs: 0, since: isRunning ? performance.now() : null };
-    lastHapticSection.current = null;
     setTotalElapsed(totalMs / 1000);
     setActiveIndex((value) => value + 1);
     setSectionElapsed(0);
   };
 
   const restartCurrentSection = () => {
-    if (screen === "rehearse") speechCoach.restartSection();
+    speechCoach.restartSection();
+    if (screen === "present") liveFeedback.restartSection();
     const { totalMs, sectionMs } = snapshot();
     const preservedTotal = Math.max(0, totalMs - sectionMs);
     clock.current = { totalMs: preservedTotal, sectionMs: 0, since: isRunning ? performance.now() : null };
     setTotalElapsed(preservedTotal / 1000);
     setSectionElapsed(0);
-    lastHapticSection.current = null;
     setActualTimes((current) => {
       const next = [...current];
       next[activeIndex] = 0;
       return next;
     });
-    setExactTimeVisible(false);
   };
 
   const resetToSetup = () => {
@@ -1101,11 +992,6 @@ export default function App() {
     sections: savedSections,
     presentationTarget: presentationTarget ?? undefined,
     speakers,
-    displayStyle,
-    colorMode,
-    hapticsEnabled,
-    quietMode,
-    coachOutline: coachOutline.trim(),
     speechScript,
   });
 
@@ -1245,7 +1131,6 @@ export default function App() {
 
   const startNewPresentation = (mode: PresentationMode) => {
     setAiHistoryId(makeId());
-    setCoachOutline("");
     setSpeechScript("");
     setPresentationMode(mode);
     setTitle("");
@@ -1263,11 +1148,6 @@ export default function App() {
     setDraftMinutes("");
     setDraftSeconds("");
     setDraftSpeaker("");
-    setDisplayStyle("standard");
-    setColorMode("muted");
-    setHapticsEnabled(false);
-    setQuietMode(false);
-    setShowPresentationCustomization(false);
     setActiveSavedId(null);
     setSavedSignature(null);
     setFormError("");
@@ -1283,7 +1163,6 @@ export default function App() {
     destination: "setup" | "rehearse" | "present" = "setup",
   ) => {
     setAiHistoryId(presentation.id);
-    setCoachOutline(presentation.coachOutline ?? "");
     setSpeechScript(presentation.speechScript ?? "");
     setTitle(presentation.title);
     setPresentationMode(presentation.presentationMode);
@@ -1293,16 +1172,11 @@ export default function App() {
     setTargetSeconds(presentation.presentationTarget ? String(presentation.presentationTarget % 60).padStart(2,"0") : "");
     setSpeakers(presentation.speakers);
     // Restore the display/color settings that were saved with this presentation.
-    setDisplayStyle(presentation.displayStyle);
-    setColorMode(presentation.colorMode);
-    setHapticsEnabled(presentation.hapticsEnabled);
-    setQuietMode(Boolean(presentation.quietMode));
     setActiveSavedId(presentation.id);
     setSavedSignature(setupSignature(presentation));
     setIsAddingSpeaker(false);
     setNewSpeaker("");
     setEditingId(null);
-    setShowPresentationCustomization(false);
     setFormError("");
     setSaveConfirmation("");
     nextId.current = Math.max(0, ...presentation.sections.map((section) => section.id)) + 1;
@@ -1353,7 +1227,6 @@ export default function App() {
       ? savedPresentations.find((item) => item.id === draft.savedPresentationId)
       : undefined;
     setAiHistoryId(saved?.id ?? draft.aiHistoryId ?? makeId());
-    setCoachOutline(draft.coachOutline ?? saved?.coachOutline ?? "");
     setSpeechScript(draft.speechScript ?? saved?.speechScript ?? "");
     setPresentationMode(draft.presentationMode);
     setTitle(draft.title);
@@ -1362,10 +1235,6 @@ export default function App() {
     setTargetMinutes(draft.presentationTarget ? String(Math.floor(draft.presentationTarget / 60)) : "");
     setTargetSeconds(draft.presentationTarget ? String(draft.presentationTarget % 60).padStart(2,"0") : "");
     setSpeakers(draft.speakers);
-    setDisplayStyle(draft.displayStyle);
-    setColorMode(draft.colorMode);
-    setHapticsEnabled(draft.hapticsEnabled);
-    setQuietMode(Boolean(draft.quietMode));
     setActiveSavedId(saved ? saved.id : null);
     setSavedSignature(saved ? setupSignature(saved) : null);
     setEditingId(draft.editor.editingId);
@@ -1376,7 +1245,6 @@ export default function App() {
     setIsAddingSpeaker(draft.editor.addingSpeaker);
     setNewSpeaker(draft.editor.newSpeaker);
     setSpeakerError("");
-    setShowPresentationCustomization(false);
     setFormError("");
     setSaveConfirmation("");
     nextId.current = Math.max(1, ...draft.sections.map((section) => section.id)) + 1;
@@ -1533,9 +1401,8 @@ export default function App() {
     </div>
   );
 
-  const coachDock = (mode: "Rehearse" | "Present") => (
+  const coachDock = (
     <CoachDock
-      mode={mode}
       available={speechCoach.available}
       enabled={speechCoach.enabled}
       listening={speechCoach.listening}
@@ -1557,7 +1424,6 @@ export default function App() {
       unitLabel={speechMetrics.unitLabel}
       rateLabel={speechMetrics.rateLabel}
       onToggle={speechCoach.setEnabled}
-      live={liveFeedback}
     />
   );
 
@@ -2245,19 +2111,8 @@ export default function App() {
           </div>
           {presentationMode === "group" && renderSpeakerAllocation()}
           {savePanel}
-          <details className="speech-coach-notes">
-            <summary>Speaking outline</summary>
-            <textarea id="sprint4-ai-outline" aria-label="Speaking outline" rows={4} maxLength={2000}
-              value={coachOutline} placeholder="Section: key point"
-              onChange={(event) => setCoachOutline(event.target.value)} />
-          </details>
           <HistoryPanel runs={presentationHistory} hints={historyHints}
             onDelete={deleteHistoryRun} onClear={clearPresentationHistory} compact />
-          <label className="sprint4-ai-present-optin">
-            <input type="checkbox" checked={historyHintsEnabled}
-              onChange={(event) => setHistoryHintsEnabled(event.target.checked)} />
-            Show rehearsal reminders while presenting
-          </label>
           <div className="launch-options">
             <button className="launch-option launch-option--rehearse" onClick={startRehearsal} type="button">
               <span className="launch-option__icon"><Icon name="play" size={22} /></span>
@@ -2283,12 +2138,6 @@ export default function App() {
   }
 
   if (screen === "presentation-ready") {
-    const selectedDisplayStyle = DISPLAY_STYLES.find((style) => style.id === displayStyle) ?? DISPLAY_STYLES[1];
-    const selectedColor = COLOR_MODES.find((mode) => mode.id === colorMode) ?? COLOR_MODES[0];
-    // Preview the user's real first section, halfway through its own target.
-    const previewSection = sections[0];
-    const previewNext = sections[1];
-    const previewElapsed = previewSection ? Math.round(previewSection.target / 2) : 0;
     return (
       <main className={`app-shell presentation-ready-screen mode--${presentationMode}`}>
         <AppHeader account={account} onAccount={() => openAccount("presentation-ready")} onHome={goHome} />
@@ -2324,123 +2173,6 @@ export default function App() {
 
           {presentationMode === "group" && renderSpeakerAllocation()}
 
-          <div className={`presentation-setting quiet-setting ${quietMode ? "quiet-setting--on" : ""}`}>
-            <div><strong>Quiet view</strong></div>
-            <button
-              aria-label="Quiet view"
-              aria-pressed={quietMode}
-              className="switch"
-              onClick={() => setQuietMode((value) => !value)}
-              type="button"
-            >
-              <span />
-            </button>
-          </div>
-
-          <button
-            aria-expanded={showPresentationCustomization}
-            className="presentation-customize-toggle"
-            onClick={() => setShowPresentationCustomization((value) => !value)}
-            type="button"
-          >
-            <span>
-              <strong>Display settings</strong>
-              <small>{quietMode ? "Quiet view" : selectedDisplayStyle.name} · {selectedColor.name}</small>
-            </span>
-            <Icon name="chevron-down" size={20} />
-          </button>
-
-          {showPresentationCustomization && (
-            <div className="presentation-customization">
-              <fieldset className="presentation-setting">
-                <legend>Display detail</legend>
-                <div className="segmented-control display-style-control">
-                  {DISPLAY_STYLES.map((style) => (
-                    <button
-                      aria-pressed={displayStyle === style.id}
-                      key={style.id}
-                      onClick={() => setDisplayStyle(style.id)}
-                      type="button"
-                    >
-                      <strong>{style.name}</strong>
-                    </button>
-                  ))}
-                </div>
-              </fieldset>
-
-              <fieldset className="presentation-setting">
-                <legend>Screen color</legend>
-                <div className="segmented-control segmented-control--two color-mode-control">
-                  {COLOR_MODES.map((mode) => (
-                    <button
-                      aria-pressed={colorMode === mode.id}
-                      key={mode.id}
-                      onClick={() => setColorMode(mode.id)}
-                      type="button"
-                    >
-                      <span aria-hidden="true" className={`color-swatch color-swatch--${mode.id}`} />
-                      <span className="color-mode-control__copy">
-                        <strong>{mode.name}</strong>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </fieldset>
-
-              <div
-                aria-label="Presentation display preview"
-                className={`presentation-preview presentation-preview--${colorMode}`}
-                role="img"
-              >
-                <div className="presentation-preview__top">
-                  {(displayStyle !== "minimal" || quietMode) && (
-                    <span>Section 1 of {sections.length}</span>
-                  )}
-                  {displayStyle === "detailed" && !quietMode && (
-                    <span>Total {formatTime(previewElapsed)} / {formatTime(totalTarget)}</span>
-                  )}
-                </div>
-                <div className="presentation-preview__stage">
-                  {presentationMode === "group" && (
-                  <small>{speakerLabel(previewSection?.speaker)}</small>
-                  )}
-                  <strong>{previewSection?.name}</strong>
-                  <div className="presentation-preview__progress">
-                    <span style={{ width: "50%" }} />
-                  </div>
-                  {displayStyle === "minimal" || quietMode ? (
-                    <i className="presentation-preview__hint">Tap for time</i>
-                  ) : (
-                    <time>{formatTime(previewElapsed)} / {formatTime(previewSection?.target ?? 0)}</time>
-                  )}
-                  {displayStyle === "detailed" && !quietMode && (
-                    <b className="presentation-preview__status">On pace</b>
-                  )}
-                  <p>
-                    {previewNext
-                      ? presentationMode === "group"
-                        ? `Up next · ${speakerLabel(previewNext.speaker)} — ${previewNext.name}${displayStyle === "detailed" && !quietMode ? ` · ${formatTime(previewNext.target)}` : ""}`
-                        : `Next: ${previewNext.name}${displayStyle === "detailed" && !quietMode ? ` · ${formatTime(previewNext.target)}` : ""}`
-                      : "Final section"}
-                  </p>
-                </div>
-              </div>
-
-              <div className="presentation-setting haptic-setting">
-                <div><strong>Final 5-second cue</strong></div>
-                <button
-                  aria-label="Toggle pacing cues"
-                  aria-pressed={hapticsEnabled}
-                  className="switch"
-                  onClick={() => setHapticsEnabled((value) => !value)}
-                  type="button"
-                >
-                  <span />
-                </button>
-              </div>
-            </div>
-          )}
-
           {savePanel}
         </section>
         <div className="sticky-action sticky-action--light">
@@ -2455,128 +2187,71 @@ export default function App() {
   if (screen === "present") {
     const current = sections[activeIndex];
     const isLast = activeIndex === sections.length - 1;
-    const isOver = sectionElapsed > current.target;
-    const progress = Math.min(100, (sectionElapsed / current.target) * 100);
-    // Quiet view keeps the screen calm: no over/near colors, times or pace status.
-    const pace = quietMode ? "neutral" : isOver ? "over" : progress >= 80 ? "near" : "neutral";
-    const showTiming = !quietMode && displayStyle !== "minimal";
-    const cueActive =
-      hapticsEnabled &&
-      isRunning &&
-      sectionElapsed < current.target &&
-      current.target - sectionElapsed <= 5;
+    const remaining = current.target - sectionElapsed;
+    const paceCue = liveFeedback.enabled && isRunning && !presentExitDestination
+      ? presentPaceCue({ target: current.target, sectionElapsed, sectionWords: currentSpeechWords, language: speechCoach.language })
+      : null;
+    const cue = liveFeedback.cue ?? paceCue;
+    const microphoneStatus = liveFeedback.enabled && (!speechCoach.available || speechCoach.error)
+      ? "Microphone unavailable"
+      : "";
+    const nextSpeaker = !isLast && presentationMode === "group" &&
+      sections[activeIndex + 1].speaker !== current.speaker
+      ? speakerLabel(sections[activeIndex + 1].speaker)
+      : "";
     return (
-      <main
-        className={`present-screen present-screen--${pace} present-screen--${displayStyle} timer-color--${colorMode} ${cueActive ? "present-screen--cue" : ""} ${quietMode ? "present-screen--quiet" : ""}`}
-        onClick={revealExactTime}
-      >
+      <main className="present-screen">
         <div className="present-screen__top">
           <Button className="present-home-button" icon="home" onClick={goHome} variant="ghost">
             Home
           </Button>
-          <div className="present-screen__meta">
-            {(displayStyle !== "minimal" || quietMode) && (
-              <span>Section {activeIndex + 1} of {sections.length}</span>
-            )}
-            {displayStyle === "detailed" && !quietMode && (
-              <span>Presentation remaining: {totalElapsed > totalTarget ? `+${formatTime(totalElapsed - totalTarget)} over` : formatTime(totalTarget - totalElapsed)}</span>
-            )}
-          </div>
-          <button
-            aria-pressed={quietMode}
-            className="present-quiet-toggle"
-            onClick={(event) => {
-              event.stopPropagation();
-              setQuietMode((value) => !value);
-            }}
-            type="button"
-          >
-            {quietMode ? "Show timing" : "Quiet view"}
-          </button>
         </div>
 
-        <PresentHistoryHint hint={quietMode || liveFeedback.cue ? null : currentHistoryHint}
-          onDismiss={() => setDismissedHintSection(activeIndex)} />
-        <LiveCueOverlay cue={quietMode ? null : liveFeedback.cue} onDismiss={liveFeedback.dismiss} />
-        {coachDock("Present")}
-        <div className="present-actions" onClick={(event) => event.stopPropagation()}>
+        <section className="present-stage">
+          <h1>{current.name}</h1>
+          {presentationMode === "group" && <p className="present-speaker">{speakerLabel(current.speaker)}</p>}
+          <div className="present-countdown" role="timer" aria-label={remaining < 0 ? "Section overtime" : "Section remaining"}>
+            {remaining < 0 ? `+${formatTime(Math.floor(-remaining))}` : formatTime(Math.ceil(remaining))}
+          </div>
+          {liveFeedback.configured && (
+            <LiveCueToggle
+              enabled={liveFeedback.enabled}
+              accessCode={aiAccessCode}
+              onAccessCodeChange={setAiAccessCode}
+              onToggle={(enabled) => {
+                liveFeedback.setEnabled(enabled);
+                speechCoach.setEnabled(enabled && speechCoach.available);
+              }}
+              needsCode={liveFeedback.needsCode}
+            />
+          )}
+          <div className="present-cue" role="status" aria-atomic="true">
+            {cue || liveFeedback.error || microphoneStatus}
+          </div>
+        </section>
+
+        <div className="present-actions">
           <Button ariaLabel="Go back to setup" icon="edit" onClick={resetToSetup} variant="ghost">
             Setup
           </Button>
           <Button ariaLabel="Restart current section" icon="restart" onClick={restartCurrentSection} variant="ghost">
             Restart
           </Button>
-          <Button
-            icon={isRunning ? "pause" : "play"}
-            onClick={toggleTimer}
-            variant="ghost"
-          >
+          <Button icon={isRunning ? "pause" : "play"} onClick={toggleTimer} variant="ghost">
             {isRunning ? "Pause" : "Resume"}
           </Button>
         </div>
-
-        <section className="present-stage" key={current.id}>
-          {presentationMode === "group" && (
-            <span className="present-speaker"><strong>{speakerLabel(current.speaker)}</strong></span>
-          )}
-          <h1>{current.name}</h1>
-          {showTiming && <p className="present-remaining-total">Presentation remaining: {totalElapsed > totalTarget ? `+${formatTime(totalElapsed - totalTarget)} over` : formatTime(totalTarget - totalElapsed)}</p>}
-          <div className="present-progress" aria-label={`${Math.round(progress)} percent of section target`}>
-            <span style={{ width: `${progress}%` }} />
-          </div>
-          <div className={`present-exact-time ${exactTimeVisible || showTiming ? "present-exact-time--visible" : ""}`}>
-            {isOver && !quietMode
-              ? `Section over by +${formatTime(sectionElapsed - current.target)}`
-              : `Section remaining: ${formatTime(current.target - sectionElapsed)}`}
-          </div>
-          {quietMode && !exactTimeVisible && (
-            <span className="present-quiet-hint">Tap for time</span>
-          )}
-          {displayStyle === "detailed" && !quietMode && (
-            <div className="present-detail-status">
-              {isOver ? "Over target" : progress >= 80 ? "Approaching target" : "On pace"}
-            </div>
-          )}
-          {displayStyle === "minimal" && !quietMode && isOver && !exactTimeVisible && (
-            <span className="present-overtime">+{formatTime(sectionElapsed - current.target)}</span>
-          )}
-          {!isLast && presentationMode === "group" ? (
-            <div className="present-next present-next--speaker">
-              <small>Up next</small>
-              <strong>{speakerLabel(sections[activeIndex + 1].speaker)}</strong>
-              <span>
-                {sections[activeIndex + 1].name}
-                {displayStyle === "detailed" && !quietMode && ` · ${formatTime(sections[activeIndex + 1].target)}`}
-              </span>
-            </div>
-          ) : !isLast ? (
-            <div className="present-next">
-              <span>
-                Next: {sections[activeIndex + 1].name}
-                {displayStyle === "detailed" && !quietMode && ` · ${formatTime(sections[activeIndex + 1].target)}`}
-              </span>
-            </div>
-          ) : (
-            <div className="present-next"><span>Final section</span></div>
-          )}
-        </section>
+        <button className="present-advance" onClick={nextPresentationSection} type="button">
+          <span>
+            {isLast ? "Finish presentation" : "Next section"}
+            {nextSpeaker && <small>{nextSpeaker}</small>}
+          </span>
+          <Icon name="chevron-right" size={24} />
+        </button>
 
         {presentExitDestination && (
           <ConfirmDialog title="Exit live presentation?" body="This run won’t be saved." cancelLabel="Keep presenting" confirmLabel="Exit presentation" danger onCancel={() => setPresentExitDestination(null)} onConfirm={() => { const destination=presentExitDestination; setPresentExitDestination(null); clock.current.since=null; setIsRunning(false); setAutosaveOn(false); setScreen(destination === "setup" ? "setup" : "concepts"); }}/>
         )}
-        {!isRunning && <div className="present-paused">Paused</div>}
-
-        <button
-          className="present-advance"
-          onClick={(event) => {
-            event.stopPropagation();
-            nextPresentationSection();
-          }}
-          type="button"
-        >
-          <span>{isLast ? "Finish presentation" : "Next section"}</span>
-          <Icon name="chevron-right" size={24} />
-        </button>
       </main>
     );
   }
@@ -2602,7 +2277,7 @@ export default function App() {
           </div>
 
           {speechCoach.segments.length > 0 && (
-            <CoachReport metrics={speechMetrics} transcript={speechCoach.transcript} outline={coachOutline}
+            <CoachReport metrics={speechMetrics} transcript={speechCoach.transcript}
               accessCode={aiAccessCode} onAccessCodeChange={setAiAccessCode}
               feedback={rehearsalFeedback} onFeedback={setRehearsalFeedback} />
           )}
@@ -2654,8 +2329,7 @@ export default function App() {
             Home
           </Button>
         </header>
-        <LiveCueOverlay cue={liveFeedback.cue} onDismiss={liveFeedback.dismiss} />
-        {coachDock("Rehearse")}
+        {coachDock}
         <section className="timer-content">
           <div className="timer-position">
             <span>{isLast ? "Last section" : `Section ${activeIndex + 1} of ${sections.length}`}</span>
@@ -2836,7 +2510,7 @@ export default function App() {
         </div>
 
         <CoachReport key={currentRehearsalId} metrics={speechMetrics} transcript={speechCoach.transcript}
-          outline={coachOutline} script={speechScript}
+          script={speechScript}
           accessCode={aiAccessCode} onAccessCodeChange={setAiAccessCode}
           feedback={rehearsalFeedback} onFeedback={setRehearsalFeedback}
           rehearsal={{

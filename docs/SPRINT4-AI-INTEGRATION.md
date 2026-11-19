@@ -3,9 +3,9 @@
 ## Preview
 
 - In Setup, enter an overall time and open **Suggest sections with AI**. Set a target such as 3:00 or 5:00, then use the actual preview access code. Review the section purposes and durations before applying the plan.
-- After Rehearse, select **Generate AI feedback**. Timing alone is sufficient. If you used the optional microphone or entered an outline, requesting feedback sends the resulting text with the timing.
+- After Rehearse, select **Generate AI feedback**. Feedback uses the rehearsal transcript. The optional speech script provides context.
 - Use **Save rehearsal to history** to keep timing, estimated speaking pace, and generated feedback in this browser. Transcript storage is opt-in. In **Rehearsal history**, open a saved session to see those details.
-- In Present, enable the microphone and **Optional live AI feedback** to request short cues. The preview limits requests per run. Quiet view pauses remote checks.
+- In Present, **AI Sync Cues** starts live transcription and short cues. The model uses the optional script and relevant saved rehearsal context. Saved transcript excerpts are included if the rehearsal was saved with its transcript. The preview limits requests per run.
 - In Vercel Environment Variables, reveal and copy the **Value** of `AI_DEMO_ACCESS_CODE`. The code stays in memory until the page is reloaded. Browser transcription and local rehearsal history do not depend on the text model. Browser transcription may use the browser vendor's service.
 
 ## Vercel configuration

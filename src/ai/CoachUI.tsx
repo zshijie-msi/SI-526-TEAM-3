@@ -1,13 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { PreviewAccessField } from "./PreviewAccessField";
 import type { ContentFeedback, RehearsalFeedback } from "./history";
-import { LiveAnalysisControls, type LiveAnalysisUIProps } from "./LiveUI";
 import { localSuggestions, type SpeechMetrics } from "./metrics";
 import type { RehearsalSpeechSection } from "./speechFeedback";
 import "./coach.css";
 
 interface CoachDockProps {
-  mode: "Rehearse" | "Present";
   available: boolean;
   enabled: boolean;
   listening: boolean;
@@ -29,14 +27,13 @@ interface CoachDockProps {
   relayCode: string;
   onRelayCodeChange: (code: string) => void;
   onToggle: (enabled: boolean) => void;
-  live: LiveAnalysisUIProps;
 }
 
 export function CoachDock({
-  mode, available, enabled, listening, error, interim, transcript,
+  available, enabled, listening, error, interim, transcript,
   words, wpm, cue, unitLabel, rateLabel, language, languageLocked,
   onLanguageChange, onToggle, provider, onProviderChange,
-  relayConfigured, relayIsMock, relayCode, onRelayCodeChange, live,
+  relayConfigured, relayIsMock, relayCode, onRelayCodeChange,
 }: CoachDockProps) {
   const [expanded, setExpanded] = useState(false);
   return (
@@ -111,7 +108,6 @@ export function CoachDock({
           )}
           {enabled && cue && <p className="speech-coach-cue" role="status">{cue}</p>}
           {error && <p className="speech-coach-error" role="alert">{error}</p>}
-          {mode === "Present" && <LiveAnalysisControls {...live} />}
           {enabled && (
             <div className="speech-coach-transcript">
               <strong>Live transcript</strong>
@@ -148,11 +144,10 @@ export function FeedbackResults({ feedback }: { feedback: RehearsalFeedback }) {
 }
 
 export function CoachReport({
-  metrics, transcript, outline = "", script = "", accessCode, onAccessCodeChange, feedback, onFeedback, rehearsal,
+  metrics, transcript, script = "", accessCode, onAccessCodeChange, feedback, onFeedback, rehearsal,
 }: {
   metrics: SpeechMetrics;
   transcript: string;
-  outline?: string;
   script?: string;
   accessCode: string;
   onAccessCodeChange(code: string): void;
@@ -190,7 +185,6 @@ export function CoachReport({
         headers: { "Content-Type": "application/json", "X-AI-Demo-Code": accessCode.trim() },
         body: JSON.stringify(rehearsal ? {
           mode: "content",
-          outline: outline.slice(0, 3000),
           script: script.trim(),
           sections: rehearsal.sections.filter(({ transcript }) => transcript.trim()).slice(0, 50)
             .map(({ id, name, transcript, actualSeconds, targetSeconds }) => ({
@@ -198,7 +192,6 @@ export function CoachReport({
             })),
         } : {
           transcript: transcript.slice(0, 8000),
-          outline: outline.slice(0, 3000),
           wordsPerMinute: metrics.wpm,
           sections: metrics.sections,
         }),

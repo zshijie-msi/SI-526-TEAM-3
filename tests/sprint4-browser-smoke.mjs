@@ -7,7 +7,7 @@ const origin="http://127.0.0.1:5173";
 // Start Vite directly instead of spawning npm (which would leave a child
 // process with open inherited pipes and hang the CI browser test indefinitely).
 const server=spawn(process.execPath,["node_modules/vite/bin/vite.js","--host","127.0.0.1","--port","5173"],{
-  stdio:"ignore",env:{...process.env,PORT:"5173",VITE_AI_PAID_REVIEW_ENABLED:"true"},
+  stdio:"ignore",env:{...process.env,PORT:"5173",VITE_AI_PAID_REVIEW_ENABLED:"true",VITE_AI_LIVE_FEEDBACK_ENABLED:"true"},
 });
 let browser;
 try{
@@ -31,6 +31,11 @@ try{
       start(){
         window.startedRehearsalSections = (window.startedRehearsalSections ?? 0) + 1;
         this.onaudiostart?.();
+        if (document.querySelector(".present-screen h1")?.textContent === "Main idea") {
+          setTimeout(() => this.onresult?.({ resultIndex: 0, results: [{ isFinal: false,
+            0: { transcript: "We break every large assignment into small chunks, one deadline at a time." },
+          }] }), 100);
+        }
       }
       stop(){
         setTimeout(() => {
@@ -118,8 +123,7 @@ try{
   console.log("E2E: Ready loaded");
   assert.ok((await page.locator(".history-panel").innerText()).includes("No saved rehearsals"));
 
-  await page.locator(".speech-coach-notes summary").click();
-  await page.locator("#sprint4-ai-outline").fill("Intro: explain the main problem");
+  assert.equal(await page.getByText("Speaking outline", { exact: true }).count(), 0);
   const run=async(i)=>{
     console.log("E2E: rehearsal "+i+" starting");
     await page.getByRole("button",{name:/Rehearse/i}).first().click();
@@ -128,6 +132,7 @@ try{
       await page.getByRole("button",{name:/Enable microphone/i}).click();
       await page.getByText("Waiting for speech…", { exact: true }).waitFor();
     }
+    if (i === 2) await page.waitForTimeout(200);
     await page.getByRole("button",{name:"Next section",exact:true}).click();
     if (i === 1) await page.waitForFunction(() => window.startedRehearsalSections === 2);
     await page.getByRole("button",{name:"Finish",exact:true}).click();
@@ -180,17 +185,52 @@ try{
   await run(1);await run(2);
   console.log("E2E: two history saves completed");
   assert.ok((await page.locator(".history-panel").innerText()).includes("2 saved runs"));
-  await page.getByRole("button",{name:/^Present/i}).first().click();
-  console.log("E2E: presentation setup opened");
-  await page.getByRole("button",{name:"Start",exact:true}).click();
-  await page.locator(".present-history-hint").waitFor({timeout:2000});
-  assert.match(await page.locator(".present-history-hint").innerText(),/Rehearsal reminder/);
+  const liveInputs = [];
+  await page.route("**/api/live-coach", async (route) => {
+    const input = route.request().postDataJSON();
+    liveInputs.push(input);
+    assert.equal(route.request().headers()["x-ai-demo-code"], previewCode);
+    assert.equal(input.script, speechScript);
+    await route.fulfill({ json: {
+      cue: input.section === "Intro" ? "Lead with the decision" : "Give one example",
+      confidence: "high",
+    } });
+  });
+  await page.getByRole("button", { name: "Present", exact: true }).click();
+  assert.doesNotMatch(await page.locator("main").innerText(), /Quiet view|Display settings|Screen color|Speaking outline/);
+  await page.getByRole("button", { name: "Start", exact: true }).click();
+  const toggle = page.getByRole("button", { name: "AI Sync Cues" });
+  const cue = page.locator(".present-cue");
+  const timer = page.getByRole("timer", { name: "Section remaining" });
+  await timer.waitFor();
+  assert.match(await timer.innerText(), /^(1:00|0:5[0-9])$/);
+  assert.equal(await toggle.getAttribute("aria-pressed"), "false");
+  assert.equal(await cue.innerText(), "");
+  await page.waitForTimeout(1200);
+  assert.equal(liveInputs.length, 0);
+  await toggle.click();
+  assert.equal(await toggle.getAttribute("aria-pressed"), "true");
+  await page.getByText("Lead with the decision", { exact: true }).waitFor();
+  assert.equal(liveInputs[0].section, "Intro");
+  assert.equal(liveInputs[0].transcript, "");
+  assert.equal(liveInputs[0].rehearsal.attempts.length, 2);
+  assert.ok(liveInputs[0].rehearsal.suggestions.includes("Name the decision each meeting should end with."));
+  assert.ok(liveInputs[0].rehearsal.attempts.every((attempt) => attempt.transcript === undefined));
+  await page.getByRole("button", { name: "Next section", exact: true }).click();
+  await page.getByText("Give one example", { exact: true }).waitFor();
+  assert.equal(liveInputs[1].section, "Main idea");
+  assert.match(liveInputs[1].transcript, /^We break every large assignment/);
+  await toggle.click();
+  assert.equal(await cue.innerText(), "");
+  assert.equal(await toggle.getAttribute("aria-pressed"), "false");
   const extra=await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth);
   assert.ok(extra<=1,"Horizontal overflow: "+extra);
   assert.deepEqual(errors,[],"React/browser page errors");
   assert.deepEqual(modelCalls.map(url => new URL(url).pathname),
-    ["/api/section-plan", "/api/section-plan", "/api/ai-feedback", "/api/ai-feedback"]);
-  console.log("SPRINT4 BROWSER SMOKE PASSED: section plan, saved AI feedback, Present history hint and 390px layout");
+    ["/api/section-plan", "/api/section-plan", "/api/ai-feedback", "/api/ai-feedback",
+      "/api/live-coach", "/api/live-coach"]);
+  console.log("SPRINT4 BROWSER SMOKE PASSED: script planning, saved rehearsals, and opt-in Present cues");
+
 }catch(err){
   console.error("E2E FAILURE:",err);
   throw err;

@@ -3,7 +3,7 @@ import type { RehearsalRun } from "./history";
 export interface SectionHint {
   sectionId: number;
   sectionName: string;
-  kind: "over-time" | "under-time" | "variable" | "outline";
+  kind: "over-time" | "under-time" | "variable";
   text: string;
   evidence: string;
   sampleSize: number;
@@ -15,38 +15,53 @@ function median(numbers: number[]): number {
   const mid = Math.floor(list.length / 2);
   return list.length % 2 ? list[mid] : (list[mid - 1] + list[mid]) / 2;
 }
-function cleanContent(text: string): string {
-  return text.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").replace(/\s+/g, " ").trim();
-}
-function contentFound(text: string, phrase: string): boolean {
-  const t = cleanContent(text);
-  const p = cleanContent(phrase);
-  if (!p || p.length < 4) return true;
-  return t.includes(p) || t.replace(/\s/g, "").includes(p.replace(/\s/g, ""));
+function findRehearsedSection(run: RehearsalRun, section: { id: number; name: string }) {
+  const name = key(section.name.slice(0, 100));
+  const matchesName = (candidate: RehearsalRun["sections"][number]) =>
+    typeof candidate?.name === "string" && key(candidate.name) === name;
+  return run.sections.find((candidate) => matchesName(candidate) && candidate.id === section.id) ??
+    run.sections.find(matchesName);
 }
 
-/** Only section-specific lines like "Intro: key fact" are parsed. */
-export function outlinePointsForSection(outline: string, sectionName: string): string[] {
-  return outline.split(/\r?\n/).map((line) => {
-    const match = line.trim().match(/^(?:[-*]\s*)?([^:：]{2,80})[:：]\s*(.{4,200})$/);
-    return match && key(match[1]) === key(sectionName) ? match[2].trim() : "";
-  }).filter(Boolean).slice(0, 10);
+export function liveRehearsalContext(runs: RehearsalRun[], section: { id: number; name: string }) {
+  const recent = runs.flatMap((run) => {
+    const sample = findRehearsedSection(run, section);
+    return sample && Number.isFinite(sample.actual) && sample.actual > 0 ? [{ run, sample }] : [];
+  }).slice(0, 3);
+  const suggestions = new Set<string>();
+  for (const { run } of recent) {
+    if (!run.feedback || !("suggestions" in run.feedback) || !Array.isArray(run.feedback.suggestions)) continue;
+    for (const item of run.feedback.suggestions) {
+      if (typeof item?.sectionName === "string" && key(item.sectionName) === key(section.name.slice(0, 100)) &&
+          typeof item.suggestion === "string" && item.suggestion.trim()) {
+        suggestions.add(item.suggestion.trim().slice(0, 450));
+      }
+    }
+  }
+  return {
+    attempts: recent.map(({ run, sample }) => ({
+      actualSeconds: sample.actual,
+      targetSeconds: sample.target,
+      speechRate: sample.rate ?? null,
+      language: typeof run.language === "string" ? run.language.slice(0, 20) : "",
+      ...(run.transcriptSaved && sample.transcript?.trim()
+        ? { transcript: sample.transcript.trim().slice(0, 650) }
+        : {}),
+    })),
+    suggestions: [...suggestions].slice(0, 3),
+  };
 }
 
-/** Requires 2+ rehearsals. Exact phrase matching is not semantic analysis. */
+/** Timing reminders require a pattern across at least two rehearsals. */
 export function buildHistoryHints(args: {
   runs: RehearsalRun[];
   sections: Array<{ id: number; name: string; target: number }>;
-  outline?: string;
 }): SectionHint[] {
-  const { runs, sections, outline = "" } = args;
+  const { runs, sections } = args;
   const result: SectionHint[] = [];
   for (const section of sections) {
-    const samples = runs.slice(0, 8).map((run) =>
-      run.sections.find((candidate) =>
-        candidate.id === section.id && key(candidate.name) === key(section.name)
-      ) ?? run.sections.find((candidate) => key(candidate.name) === key(section.name)),
-    ).filter((sample): sample is NonNullable<typeof sample> => sample !== undefined);
+    const samples = runs.slice(0, 8).map((run) => findRehearsedSection(run, section))
+      .filter((sample): sample is NonNullable<typeof sample> => sample !== undefined);
     if (samples.length < 2 || section.target <= 0) continue;
 
     const over = samples.filter((sample) => sample.actual > section.target + 10).length;
@@ -75,27 +90,8 @@ export function buildHistoryHints(args: {
         sampleSize: samples.length,
       });
     }
-
-    const transcriptSamples = samples.filter((sample) => typeof sample.transcript === "string" &&
-      sample.transcript.trim().length >= 20);
-    if (transcriptSamples.length < 2) continue;
-    for (const point of outlinePointsForSection(outline, section.name)) {
-      const missing = transcriptSamples.filter((sample) => !contentFound(sample.transcript ?? "", point)).length;
-      if (missing >= 2 && missing / transcriptSamples.length >= 0.6) result.push({
-        sectionId: section.id, sectionName: section.name, kind: "outline",
-        text: "Check outline point: " + point.slice(0, 85),
-        evidence: `Exact phrase missing in ${missing} of ${transcriptSamples.length} transcripts`,
-        sampleSize: transcriptSamples.length,
-      });
-    }
   }
   return result;
-}
-
-export function cueForSection(hints: SectionHint[], sectionId: number): SectionHint | null {
-  const candidates = hints.filter((hint) => hint.sectionId === sectionId);
-  return candidates.find((hint) => hint.kind === "outline") ??
-    candidates.find((hint) => hint.kind === "over-time") ?? candidates[0] ?? null;
 }
 
 export function historyStats(runs: RehearsalRun[]): {
